@@ -210,6 +210,70 @@ func (p *Page) AddTextColorCMYK(text string, x, y float64, font FontName, size f
 	return nil
 }
 
+// AddTextCustomFont adds text using an embedded TrueType/OpenType font.
+//
+// This method supports Unicode text including Cyrillic, CJK, Arabic, and symbols.
+// The font is automatically subset to include only the glyphs used in the document.
+//
+// Parameters:
+//   - text: The string to display (supports Unicode)
+//   - x: Horizontal position in points (from left edge)
+//   - y: Vertical position in points (from bottom edge)
+//   - font: Custom font loaded via LoadFont()
+//   - size: Font size in points
+//
+// Example:
+//
+//	font, _ := creator.LoadFont("fonts/OpenSans-Regular.ttf")
+//	err := page.AddTextCustomFont("Привет мир! 你好世界!", 100, 700, font, 24)
+func (p *Page) AddTextCustomFont(text string, x, y float64, font *CustomFont, size float64) error {
+	return p.AddTextCustomFontColor(text, x, y, font, size, Black)
+}
+
+// AddTextCustomFontColor adds colored text using an embedded TrueType/OpenType font.
+//
+// This method supports Unicode text including Cyrillic, CJK, Arabic, and symbols.
+// The font is automatically subset to include only the glyphs used in the document.
+//
+// Parameters:
+//   - text: The string to display (supports Unicode)
+//   - x: Horizontal position in points (from left edge)
+//   - y: Vertical position in points (from bottom edge)
+//   - font: Custom font loaded via LoadFont()
+//   - size: Font size in points
+//   - color: Text color (RGB, 0.0 to 1.0 range)
+//
+// Example:
+//
+//	font, _ := creator.LoadFont("fonts/OpenSans-Bold.ttf")
+//	err := page.AddTextCustomFontColor("重要!", 100, 700, font, 24, creator.Red)
+func (p *Page) AddTextCustomFontColor(text string, x, y float64, font *CustomFont, size float64, color Color) error {
+	if font == nil {
+		return errors.New("font cannot be nil")
+	}
+	if size <= 0 {
+		return errors.New("font size must be positive")
+	}
+	if color.R < 0 || color.R > 1 || color.G < 0 || color.G > 1 || color.B < 0 || color.B > 1 {
+		return errors.New("color components must be in range [0.0, 1.0]")
+	}
+
+	// Mark characters as used for font subsetting.
+	font.UseString(text)
+
+	// Store text operation with custom font.
+	p.textOps = append(p.textOps, TextOperation{
+		Text:       text,
+		X:          x,
+		Y:          y,
+		CustomFont: font,
+		Size:       size,
+		Color:      color,
+	})
+
+	return nil
+}
+
 // TextOperations returns all text operations for this page.
 //
 // This is used by the writer infrastructure to generate the content stream.

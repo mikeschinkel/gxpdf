@@ -227,9 +227,9 @@ func GenerateContentStreamWithGraphics(textOps []TextOp, graphicsOps []GraphicsO
 		if !exists {
 			// Create font object (we'll need to track object numbers)
 			// For now, use a placeholder object number that will be replaced
-			// by the actual writer
-			fontObjNum := 0 // Will be set by caller
-			fontResName = resources.AddFont(fontObjNum)
+			// by the actual writer. We track fontKey to enable correct matching later.
+			fontObjNum := 0 // Will be set by caller via SetFontObjNumByID
+			fontResName = resources.AddFontWithID(fontObjNum, fontKey)
 			usedFonts[fontKey] = fontResName
 		}
 
@@ -770,24 +770,31 @@ func (fc *FontCollection) TotalFontCount() int {
 	return len(fc.Standard14) + len(fc.Embedded)
 }
 
-// encodeTextForEmbeddedFont encodes text using character codes for embedded fonts.
+// encodeTextForEmbeddedFont encodes text using glyph IDs for embedded TrueType fonts.
 //
-// For TrueType fonts, we use the character's Unicode code point directly
-// as the character code. The ToUnicode CMap will map these back to Unicode
-// for text extraction.
+// For TrueType fonts in PDF, we must use the font's internal glyph IDs
+// as character codes, NOT Unicode code points. The ToUnicode CMap provides
+// the reverse mapping from glyph IDs back to Unicode for text extraction.
 //
 // This function returns a hex-encoded string suitable for use with Tj operator.
 func encodeTextForEmbeddedFont(text string, font *EmbeddedFont) string {
+	if font == nil || font.TTF == nil {
+		return "<>"
+	}
+
 	var buf bytes.Buffer
 	buf.WriteString("<")
 
 	for _, r := range text {
-		// Use character code directly (single byte for ASCII, two bytes for Unicode).
-		if r <= 0xFF {
-			buf.WriteString(fmt.Sprintf("%02X", r))
-		} else {
-			buf.WriteString(fmt.Sprintf("%04X", r))
+		// Look up glyph ID for this character.
+		glyphID, ok := font.TTF.CharToGlyph[r]
+		if !ok {
+			// Character not in font - use .notdef glyph (0).
+			glyphID = 0
 		}
+
+		// Write glyph ID as 2-byte hex (TrueType fonts use 16-bit glyph IDs).
+		buf.WriteString(fmt.Sprintf("%04X", glyphID))
 	}
 
 	buf.WriteString(">")

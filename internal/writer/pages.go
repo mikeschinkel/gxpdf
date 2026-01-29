@@ -229,7 +229,7 @@ func (w *PdfWriter) createPageWithContent(
 		}
 
 		fontObjs = make([]*IndirectObject, 0)
-		for _, fontDef := range fontMap {
+		for fontName, fontDef := range fontMap {
 			fontObjNum := w.allocateObjNum()
 
 			// Create font object using WriteFontObject
@@ -248,14 +248,9 @@ func (w *PdfWriter) createPageWithContent(
 				fontDict := fontBytes[dictStart:dictEnd]
 				fontObjs = append(fontObjs, NewIndirectObject(fontObjNum, 0, fontDict))
 
-				// Update resource dictionary with actual object number
-				// Find the resource name for this font
-				for resName, objNum := range resources.fonts {
-					if objNum == 0 { // Placeholder
-						resources.fonts[resName] = fontObjNum
-						break
-					}
-				}
+				// Update resource dictionary using font ID.
+				fontKey := "std:" + fontName
+				resources.SetFontObjNumByID(fontKey, fontObjNum)
 			}
 		}
 
@@ -331,14 +326,16 @@ func (w *PdfWriter) createPageWithAllContent(
 		// Create font objects and assign object numbers (only if we have text)
 		fontObjs = make([]*IndirectObject, 0)
 		if len(textOps) > 0 {
-			fontMap, err := CreateFontObjects(textOps)
+			// Use CreateFontCollection to handle both Standard14 and embedded fonts.
+			fontCollection, err := CreateFontCollection(textOps)
 			if err != nil {
 				pageDict.WriteString(" /Resources << >>")
 				pageDict.WriteString(" >>")
 				return NewIndirectObject(objNum, 0, pageDict.Bytes()), nil, nil
 			}
 
-			for _, fontDef := range fontMap {
+			// Process Standard14 fonts.
+			for fontName, fontDef := range fontCollection.Standard14 {
 				fontObjNum := w.allocateObjNum()
 
 				// Create font object using WriteFontObject
@@ -349,7 +346,6 @@ func (w *PdfWriter) createPageWithAllContent(
 
 				// Extract just the dictionary part (without N 0 obj and endobj)
 				fontBytes := fontBuf.Bytes()
-				// Find the start of the dictionary (after "N 0 obj\n")
 				dictStart := bytes.Index(fontBytes, []byte("<<"))
 				dictEnd := bytes.LastIndex(fontBytes, []byte(">>")) + 2
 
@@ -357,15 +353,34 @@ func (w *PdfWriter) createPageWithAllContent(
 					fontDict := fontBytes[dictStart:dictEnd]
 					fontObjs = append(fontObjs, NewIndirectObject(fontObjNum, 0, fontDict))
 
-					// Update resource dictionary with actual object number
-					// Find the resource name for this font
-					for resName, objNum := range resources.fonts {
-						if objNum == 0 { // Placeholder
-							resources.fonts[resName] = fontObjNum
-							break
-						}
+					// Update resource dictionary using font ID.
+					fontKey := "std:" + fontName
+					resources.SetFontObjNumByID(fontKey, fontObjNum)
+				}
+			}
+
+			// Process embedded TrueType fonts.
+			for fontID, embFont := range fontCollection.Embedded {
+				// Build font subset.
+				if embFont.Subset != nil {
+					if err := embFont.Subset.Build(); err != nil {
+						continue
 					}
 				}
+
+				// Create TrueType font writer.
+				fontWriter := NewTrueTypeFontWriter(embFont.TTF, embFont.Subset, w.allocateObjNum)
+				fontObjects, refs, err := fontWriter.WriteFont()
+				if err != nil {
+					continue
+				}
+
+				// Add all font objects.
+				fontObjs = append(fontObjs, fontObjects...)
+
+				// Update resource dictionary using font ID.
+				fontKey := "custom:" + fontID
+				resources.SetFontObjNumByID(fontKey, refs.FontObjNum)
 			}
 		}
 

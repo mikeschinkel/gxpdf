@@ -199,20 +199,23 @@ func (f *TTFFont) parseHheaTable() error {
 		return fmt.Errorf("read lineGap: %w", err)
 	}
 
-	// Skip other fields until numOfLongHorMetrics (18 bytes).
-	if err := skipBytes(r, 18); err != nil {
+	// Skip other fields until numOfLongHorMetrics (24 bytes).
+	// hhea table structure after lineGap:
+	//   advanceWidthMax (2), minLeftSideBearing (2), minRightSideBearing (2),
+	//   xMaxExtent (2), caretSlopeRise (2), caretSlopeRun (2), caretOffset (2),
+	//   reserved1-4 (8), metricDataFormat (2) = 24 bytes total.
+	if err := skipBytes(r, 24); err != nil {
 		return err
 	}
 
 	// Read numOfLongHorMetrics (at offset 34).
+	// Note: This value is already in table.Data at offset 34, we just need to
+	// verify the read completes successfully. The hmtx parser will read it
+	// directly from the table data.
 	var numHMetrics uint16
 	if err := binary.Read(r, binary.BigEndian, &numHMetrics); err != nil {
 		return fmt.Errorf("read numOfLongHorMetrics: %w", err)
 	}
-
-	// Store for hmtx parsing.
-	f.Tables["hhea"].Data = append([]byte{}, table.Data...)
-	binary.BigEndian.PutUint16(f.Tables["hhea"].Data[34:], numHMetrics)
 
 	return nil
 }
@@ -349,13 +352,13 @@ func (f *TTFFont) parseCmapFormat4(data []byte, offset uint32) error {
 	}
 
 	// Read segment arrays.
-	endCode, startCode, idDelta, err := f.readFormat4Segments(data, offset, segCount)
+	arrays, err := f.readFormat4Segments(data, offset, segCount)
 	if err != nil {
 		return fmt.Errorf("read segments: %w", err)
 	}
 
 	// Build character to glyph mapping.
-	f.buildCharToGlyphMapping(segCount, startCode, endCode, idDelta)
+	f.buildCharToGlyphMapping(segCount, arrays)
 
 	return nil
 }
@@ -364,8 +367,8 @@ func (f *TTFFont) parseCmapFormat4(data []byte, offset uint32) error {
 func (f *TTFFont) readFormat4Header(data []byte, offset uint32) (uint16, error) {
 	r := bytes.NewReader(data[offset:])
 
-	// Skip format, length, language (8 bytes).
-	if err := skipBytes(r, 8); err != nil {
+	// Skip format (2) + length (2) + language (2) = 6 bytes.
+	if err := skipBytes(r, 6); err != nil {
 		return 0, err
 	}
 
@@ -378,61 +381,114 @@ func (f *TTFFont) readFormat4Header(data []byte, offset uint32) (uint16, error) 
 	return segCountX2 / 2, nil
 }
 
+// format4Arrays holds the segment arrays from format 4.
+type format4Arrays struct {
+	endCode       []uint16
+	startCode     []uint16
+	idDelta       []int16
+	idRangeOffset []uint16
+	glyphIDArray  []uint16
+}
+
 // readFormat4Segments reads the segment arrays from format 4.
 func (f *TTFFont) readFormat4Segments(
 	data []byte,
 	offset uint32,
 	segCount uint16,
-) ([]uint16, []uint16, []int16, error) {
+) (*format4Arrays, error) {
 	r := bytes.NewReader(data[offset+14:]) // Skip to endCode array.
+	arrays := &format4Arrays{}
 
 	// Read endCode array.
-	endCode := make([]uint16, segCount)
+	arrays.endCode = make([]uint16, segCount)
 	for i := uint16(0); i < segCount; i++ {
-		if err := binary.Read(r, binary.BigEndian, &endCode[i]); err != nil {
-			return nil, nil, nil, fmt.Errorf("read endCode: %w", err)
+		if err := binary.Read(r, binary.BigEndian, &arrays.endCode[i]); err != nil {
+			return nil, fmt.Errorf("read endCode: %w", err)
 		}
 	}
 
 	// Skip reservedPad (2 bytes).
 	if err := skipBytes(r, 2); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// Read startCode array.
-	startCode := make([]uint16, segCount)
+	arrays.startCode = make([]uint16, segCount)
 	for i := uint16(0); i < segCount; i++ {
-		if err := binary.Read(r, binary.BigEndian, &startCode[i]); err != nil {
-			return nil, nil, nil, fmt.Errorf("read startCode: %w", err)
+		if err := binary.Read(r, binary.BigEndian, &arrays.startCode[i]); err != nil {
+			return nil, fmt.Errorf("read startCode: %w", err)
 		}
 	}
 
 	// Read idDelta array.
-	idDelta := make([]int16, segCount)
+	arrays.idDelta = make([]int16, segCount)
 	for i := uint16(0); i < segCount; i++ {
-		if err := binary.Read(r, binary.BigEndian, &idDelta[i]); err != nil {
-			return nil, nil, nil, fmt.Errorf("read idDelta: %w", err)
+		if err := binary.Read(r, binary.BigEndian, &arrays.idDelta[i]); err != nil {
+			return nil, fmt.Errorf("read idDelta: %w", err)
 		}
 	}
 
-	return endCode, startCode, idDelta, nil
+	// Read idRangeOffset array.
+	arrays.idRangeOffset = make([]uint16, segCount)
+	for i := uint16(0); i < segCount; i++ {
+		if err := binary.Read(r, binary.BigEndian, &arrays.idRangeOffset[i]); err != nil {
+			return nil, fmt.Errorf("read idRangeOffset: %w", err)
+		}
+	}
+
+	// Read remaining bytes as glyphIDArray.
+	// Calculate remaining bytes.
+	remaining := data[offset:]
+	headerAndArraysLen := 14 + (segCount * 8) + 2 // header + 4 arrays + pad
+	if int(headerAndArraysLen) < len(remaining) {
+		glyphDataLen := (len(remaining) - int(headerAndArraysLen)) / 2
+		arrays.glyphIDArray = make([]uint16, glyphDataLen)
+		for i := 0; i < glyphDataLen; i++ {
+			if err := binary.Read(r, binary.BigEndian, &arrays.glyphIDArray[i]); err != nil {
+				break // End of data
+			}
+		}
+	}
+
+	return arrays, nil
 }
 
 // buildCharToGlyphMapping builds the character to glyph mapping.
-func (f *TTFFont) buildCharToGlyphMapping(
-	segCount uint16,
-	startCode []uint16,
-	endCode []uint16,
-	idDelta []int16,
-) {
+func (f *TTFFont) buildCharToGlyphMapping(segCount uint16, arrays *format4Arrays) {
 	for i := uint16(0); i < segCount; i++ {
-		for charCode := startCode[i]; charCode <= endCode[i]; charCode++ {
+		for charCode := arrays.startCode[i]; charCode <= arrays.endCode[i]; charCode++ {
 			if charCode == 0xFFFF {
 				break
 			}
-			//nolint:gosec // Character code is uint16, fits in int32.
-			glyphID := uint16((int32(charCode) + int32(idDelta[i])) & 0xFFFF)
-			f.CharToGlyph[rune(charCode)] = glyphID
+
+			var glyphID uint16
+			if arrays.idRangeOffset[i] == 0 {
+				// Simple case: glyph = charCode + idDelta
+				//nolint:gosec // Character code is uint16, fits in int32.
+				glyphID = uint16((int32(charCode) + int32(arrays.idDelta[i])) & 0xFFFF)
+			} else {
+				// Complex case: look up from glyph ID array.
+				// idRangeOffset[i] is the byte offset from &idRangeOffset[i] to the glyph index.
+				// Formula from TrueType spec:
+				// glyphIndex = *( &idRangeOffset[i] + idRangeOffset[i]/2 + (charCode - startCode[i]) )
+				//
+				// Since idRangeOffset[i] is at index i in the array, and glyphIDArray starts
+				// right after idRangeOffset array, the index into glyphIDArray is:
+				// idx = idRangeOffset[i]/2 - (segCount - i) + (charCode - startCode[i])
+				//nolint:gosec // Safe integer conversion within bounds.
+				idx := int(arrays.idRangeOffset[i]/2) - int(segCount-i) + int(charCode-arrays.startCode[i])
+				if idx >= 0 && idx < len(arrays.glyphIDArray) {
+					glyphID = arrays.glyphIDArray[idx]
+					if glyphID != 0 {
+						//nolint:gosec // Glyph ID is uint16, fits in int32.
+						glyphID = uint16((int32(glyphID) + int32(arrays.idDelta[i])) & 0xFFFF)
+					}
+				}
+			}
+
+			if glyphID != 0 {
+				f.CharToGlyph[rune(charCode)] = glyphID
+			}
 		}
 	}
 }

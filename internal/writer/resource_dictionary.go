@@ -23,15 +23,17 @@ import (
 //
 // Thread Safety: Not thread-safe. Caller must synchronize if needed.
 type ResourceDictionary struct {
-	fonts      map[string]int // Font resource name -> object number (e.g., "F1" -> 5)
-	xobjects   map[string]int // XObject resource name -> object number (e.g., "Im1" -> 10)
-	extgstates map[string]int // ExtGState resource name -> object number (e.g., "GS1" -> 15)
+	fonts      map[string]int    // Font resource name -> object number (e.g., "F1" -> 5)
+	fontIDs    map[string]string // Font ID -> resource name (e.g., "custom:font_1" -> "F1")
+	xobjects   map[string]int    // XObject resource name -> object number (e.g., "Im1" -> 10)
+	extgstates map[string]int    // ExtGState resource name -> object number (e.g., "GS1" -> 15)
 }
 
 // NewResourceDictionary creates a new empty resource dictionary.
 func NewResourceDictionary() *ResourceDictionary {
 	return &ResourceDictionary{
 		fonts:      make(map[string]int),
+		fontIDs:    make(map[string]string),
 		xobjects:   make(map[string]int),
 		extgstates: make(map[string]int),
 	}
@@ -56,6 +58,49 @@ func (rd *ResourceDictionary) AddFont(objNum int) string {
 	name := fmt.Sprintf("F%d", len(rd.fonts)+1)
 	rd.fonts[name] = objNum
 	return name
+}
+
+// AddFontWithID adds a font resource with an associated ID and returns its resource name.
+//
+// The fontID is used to later set the correct object number via SetFontObjNumByID.
+// This enables correct font object assignment when fonts are created after content streams.
+//
+// Parameters:
+//   - objNum: PDF object number (can be 0 as placeholder)
+//   - fontID: Unique identifier for this font (e.g., "custom:font_1" or "std:Helvetica")
+//
+// Returns:
+//   - Resource name (e.g., "F1")
+func (rd *ResourceDictionary) AddFontWithID(objNum int, fontID string) string {
+	name := fmt.Sprintf("F%d", len(rd.fonts)+1)
+	rd.fonts[name] = objNum
+	rd.fontIDs[fontID] = name
+	return name
+}
+
+// SetFontObjNumByID sets the object number for a font identified by its ID.
+//
+// This is used after font objects are created to update the placeholder object numbers.
+//
+// Returns true if the font was found and updated, false otherwise.
+func (rd *ResourceDictionary) SetFontObjNumByID(fontID string, objNum int) bool {
+	resName, ok := rd.fontIDs[fontID]
+	if !ok {
+		return false
+	}
+	rd.fonts[resName] = objNum
+	return true
+}
+
+// GetFontIDMapping returns a copy of the font ID to resource name mapping.
+//
+// This is useful for debugging and testing.
+func (rd *ResourceDictionary) GetFontIDMapping() map[string]string {
+	result := make(map[string]string, len(rd.fontIDs))
+	for k, v := range rd.fontIDs {
+		result[k] = v
+	}
+	return result
 }
 
 // AddImage adds an image XObject resource and returns its resource name.

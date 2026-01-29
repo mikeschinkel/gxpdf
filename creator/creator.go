@@ -716,6 +716,16 @@ func convertTextOps(ops []TextOperation) []writer.TextOp {
 			Color: writer.RGB{R: op.Color.R, G: op.Color.G, B: op.Color.B},
 		}
 
+		// Handle custom embedded font.
+		if op.CustomFont != nil {
+			textOp.CustomFont = &writer.EmbeddedFont{
+				TTF:    op.CustomFont.GetTTF(),
+				Subset: op.CustomFont.GetSubset(),
+				ID:     op.CustomFont.ID(),
+			}
+			textOp.Font = "" // Clear standard font when using custom.
+		}
+
 		// Convert CMYK color if present (takes precedence over RGB)
 		if op.ColorCMYK != nil {
 			textOp.ColorCMYK = &writer.CMYK{

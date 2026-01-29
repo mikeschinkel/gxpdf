@@ -20,17 +20,20 @@ type EmbeddedFontRefs struct {
 
 // TrueTypeFontWriter generates PDF objects for TrueType/OpenType fonts.
 //
-// This writer creates all required objects for embedding a TrueType font:
-//   - Font dictionary (/Type /Font /Subtype /TrueType)
+// This writer creates all required objects for embedding a TrueType font
+// as a Type 0 Composite Font (for full Unicode support):
+//   - Type 0 Font dictionary
+//   - CIDFontType2 descendant font
 //   - FontDescriptor (font metrics)
 //   - ToUnicode CMap (for text extraction)
 //   - FontFile2 stream (embedded font data)
 //
-// Reference: PDF 1.7, Section 9.6 (Simple Fonts) and 9.8 (FontDescriptor).
+// Reference: PDF 1.7, Section 9.7 (Composite Fonts) and 9.8 (FontDescriptor).
 type TrueTypeFontWriter struct {
-	ttf       *fonts.TTFFont
-	subset    *fonts.FontSubset
-	objNumGen func() int // Function to generate next object number
+	ttf        *fonts.TTFFont
+	subset     *fonts.FontSubset
+	objNumGen  func() int      // Function to generate next object number
+	cidFontObj *IndirectObject // CIDFont object (set during createFontObject)
 }
 
 // NewTrueTypeFontWriter creates a new TrueType font writer.
@@ -67,7 +70,7 @@ func (w *TrueTypeFontWriter) WriteFont() ([]*IndirectObject, *EmbeddedFontRefs, 
 		FontFileObjNum:   fontFileObjNum,
 	}
 
-	objects := make([]*IndirectObject, 0, 4)
+	objects := make([]*IndirectObject, 0, 5)
 
 	// 1. Create FontFile2 stream (compressed font data).
 	fontFileObj, err := w.createFontFileObject(fontFileObjNum)
@@ -90,12 +93,18 @@ func (w *TrueTypeFontWriter) WriteFont() ([]*IndirectObject, *EmbeddedFontRefs, 
 	}
 	objects = append(objects, toUnicodeObj)
 
-	// 4. Create Font dictionary.
+	// 4. Create Font dictionary (Type 0 Composite Font).
+	// This also creates the CIDFont object internally.
 	fontObj, err := w.createFontObject(fontObjNum, descriptorObjNum, toUnicodeObjNum)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create font dictionary: %w", err)
 	}
 	objects = append(objects, fontObj)
+
+	// 5. Add CIDFont object (created by createFontObject).
+	if w.cidFontObj != nil {
+		objects = append(objects, w.cidFontObj)
+	}
 
 	return objects, refs, nil
 }
@@ -202,9 +211,16 @@ func (w *TrueTypeFontWriter) createToUnicodeObject(objNum int) (*IndirectObject,
 	}, nil
 }
 
-// createFontObject creates the main Font dictionary.
+// createFontObject creates the main Font dictionary (Type 0 Composite Font).
+//
+// For full Unicode support, we use Type 0 (Composite) font structure:
+// - Type 0 font with Identity-H encoding
+// - CIDFontType2 descendant font (TrueType-based CID font)
+// - Identity CIDToGIDMap
+//
+// This allows encoding any glyph ID directly in the content stream.
 func (w *TrueTypeFontWriter) createFontObject(objNum, descriptorObjNum, toUnicodeObjNum int) (*IndirectObject, error) {
-	// Generate FontDescriptor for name.
+	// Generate subset font name.
 	fd := fonts.GenerateFontDescriptor(w.ttf)
 	usedChars := make([]rune, 0, len(w.subset.UsedChars))
 	for ch := range w.subset.UsedChars {
@@ -212,88 +228,134 @@ func (w *TrueTypeFontWriter) createFontObject(objNum, descriptorObjNum, toUnicod
 	}
 	subsetName := fonts.SubsetFontName(fd.FontName, usedChars)
 
-	// Calculate FirstChar and LastChar.
-	firstChar, lastChar := w.getCharRange()
+	// Allocate object number for CIDFont (descendant font).
+	cidFontObjNum := w.objNumGen()
 
-	// Generate Widths array.
-	widths := w.generateWidthsArray(firstChar, lastChar)
+	// Generate W (Widths) array for CIDFont.
+	widthsArray := w.generateCIDWidthsArray()
 
-	// Create font dictionary.
+	// Create CIDFont dictionary (descendant font).
+	var cidBuf bytes.Buffer
+	cidBuf.WriteString("<<\n")
+	cidBuf.WriteString("/Type /Font\n")
+	cidBuf.WriteString("/Subtype /CIDFontType2\n")
+	cidBuf.WriteString(fmt.Sprintf("/BaseFont /%s\n", subsetName))
+	cidBuf.WriteString("/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>\n")
+	cidBuf.WriteString(fmt.Sprintf("/FontDescriptor %d 0 R\n", descriptorObjNum))
+	cidBuf.WriteString("/CIDToGIDMap /Identity\n")
+	cidBuf.WriteString(fmt.Sprintf("/DW %d\n", w.getDefaultWidth()))
+	if widthsArray != "" {
+		cidBuf.WriteString(fmt.Sprintf("/W %s\n", widthsArray))
+	}
+	cidBuf.WriteString(">>")
+
+	cidFontObj := &IndirectObject{
+		Number:     cidFontObjNum,
+		Generation: 0,
+		Data:       cidBuf.Bytes(),
+	}
+
+	// Create Type 0 font dictionary (composite font).
 	var buf bytes.Buffer
 	buf.WriteString("<<\n")
 	buf.WriteString("/Type /Font\n")
-	buf.WriteString("/Subtype /TrueType\n")
+	buf.WriteString("/Subtype /Type0\n")
 	buf.WriteString(fmt.Sprintf("/BaseFont /%s\n", subsetName))
-	buf.WriteString(fmt.Sprintf("/FirstChar %d\n", firstChar))
-	buf.WriteString(fmt.Sprintf("/LastChar %d\n", lastChar))
-	buf.WriteString(fmt.Sprintf("/Widths %s\n", widths))
-	buf.WriteString(fmt.Sprintf("/FontDescriptor %d 0 R\n", descriptorObjNum))
+	buf.WriteString("/Encoding /Identity-H\n")
+	buf.WriteString(fmt.Sprintf("/DescendantFonts [%d 0 R]\n", cidFontObjNum))
 	buf.WriteString(fmt.Sprintf("/ToUnicode %d 0 R\n", toUnicodeObjNum))
-	buf.WriteString("/Encoding /WinAnsiEncoding\n") // For basic Latin; Unicode uses ToUnicode
 	buf.WriteString(">>")
 
-	return &IndirectObject{
+	fontObj := &IndirectObject{
 		Number:     objNum,
 		Generation: 0,
 		Data:       buf.Bytes(),
-	}, nil
-}
-
-// getCharRange returns the FirstChar and LastChar values.
-func (w *TrueTypeFontWriter) getCharRange() (int, int) {
-	if len(w.subset.UsedChars) == 0 {
-		return 0, 0
 	}
 
-	// Collect character codes.
-	chars := make([]int, 0, len(w.subset.UsedChars))
-	for ch := range w.subset.UsedChars {
-		// For simple TrueType fonts, use character code directly.
-		// Limit to single-byte range for WinAnsiEncoding compatibility.
-		if ch <= 255 {
-			chars = append(chars, int(ch))
+	// Store CIDFont object for later addition.
+	w.cidFontObj = cidFontObj
+
+	return fontObj, nil
+}
+
+// getDefaultWidth returns the default glyph width in PDF units.
+func (w *TrueTypeFontWriter) getDefaultWidth() int {
+	// Use advance width of space character if available.
+	if glyphID, ok := w.ttf.CharToGlyph[' ']; ok {
+		if width, ok := w.ttf.GlyphWidths[glyphID]; ok {
+			scale := 1000.0 / float64(w.ttf.UnitsPerEm)
+			return int(float64(width) * scale)
 		}
 	}
-
-	if len(chars) == 0 {
-		return 32, 126 // Default ASCII range
-	}
-
-	sort.Ints(chars)
-	return chars[0], chars[len(chars)-1]
+	// Default to 1000 (full em width).
+	return 1000
 }
 
-// generateWidthsArray generates the /Widths array for the font.
-func (w *TrueTypeFontWriter) generateWidthsArray(firstChar, lastChar int) string {
+// generateCIDWidthsArray generates the /W (Widths) array for CIDFont.
+//
+// The /W array format allows sparse representation of glyph widths:
+// [startGID [w1 w2 w3 ...]] or [startGID endGID width]
+//
+// We use the first format for compactness.
+func (w *TrueTypeFontWriter) generateCIDWidthsArray() string {
+	if len(w.subset.UsedChars) == 0 {
+		return ""
+	}
+
+	// Collect all used glyph IDs with their widths.
+	type glyphWidth struct {
+		gid   uint16
+		width int
+	}
+
+	glyphs := make([]glyphWidth, 0, len(w.subset.UsedChars))
+	scale := 1000.0 / float64(w.ttf.UnitsPerEm)
+
+	for ch := range w.subset.UsedChars {
+		gid, ok := w.ttf.CharToGlyph[ch]
+		if !ok {
+			continue
+		}
+		width, ok := w.ttf.GlyphWidths[gid]
+		if !ok {
+			continue
+		}
+		scaledWidth := int(float64(width) * scale)
+		glyphs = append(glyphs, glyphWidth{gid: gid, width: scaledWidth})
+	}
+
+	if len(glyphs) == 0 {
+		return ""
+	}
+
+	// Sort by glyph ID.
+	sort.Slice(glyphs, func(i, j int) bool {
+		return glyphs[i].gid < glyphs[j].gid
+	})
+
+	// Generate W array.
 	var buf bytes.Buffer
 	buf.WriteString("[")
 
-	// Scale factor for PDF units (1000 per em).
-	scale := 1000.0 / float64(w.ttf.UnitsPerEm)
-
-	for i := firstChar; i <= lastChar; i++ {
-		if i > firstChar {
-			buf.WriteString(" ")
+	i := 0
+	for i < len(glyphs) {
+		// Find consecutive glyph IDs.
+		start := i
+		for i < len(glyphs)-1 && glyphs[i+1].gid == glyphs[i].gid+1 {
+			i++
 		}
 
-		// Get glyph ID for character.
-		glyphID, ok := w.ttf.CharToGlyph[rune(i)]
-		if !ok {
-			// Character not in font, use 0 width.
-			buf.WriteString("0")
-			continue
+		// Write this range.
+		buf.WriteString(fmt.Sprintf("%d [", glyphs[start].gid))
+		for j := start; j <= i; j++ {
+			if j > start {
+				buf.WriteString(" ")
+			}
+			buf.WriteString(fmt.Sprintf("%d", glyphs[j].width))
 		}
+		buf.WriteString("] ")
 
-		// Get advance width for glyph.
-		width, ok := w.ttf.GlyphWidths[glyphID]
-		if !ok {
-			buf.WriteString("0")
-			continue
-		}
-
-		// Scale to PDF units.
-		scaledWidth := int(float64(width) * scale)
-		buf.WriteString(fmt.Sprintf("%d", scaledWidth))
+		i++
 	}
 
 	buf.WriteString("]")

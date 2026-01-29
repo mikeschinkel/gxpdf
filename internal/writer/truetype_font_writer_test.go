@@ -59,9 +59,9 @@ func TestTrueTypeFontWriter_WriteFont(t *testing.T) {
 		t.Fatalf("WriteFont failed: %v", err)
 	}
 
-	// Verify we got 4 objects.
-	if len(objects) != 4 {
-		t.Errorf("Expected 4 objects, got %d", len(objects))
+	// Verify we got 5 objects (Type 0 font + CIDFont + FontDescriptor + ToUnicode + FontFile2).
+	if len(objects) != 5 {
+		t.Errorf("Expected 5 objects, got %d", len(objects))
 	}
 
 	// Verify object numbers.
@@ -78,7 +78,7 @@ func TestTrueTypeFontWriter_WriteFont(t *testing.T) {
 		t.Errorf("FontFileObjNum = %d, want 13", refs.FontFileObjNum)
 	}
 
-	// Find and verify font dictionary.
+	// Find and verify Type 0 font dictionary.
 	var fontDict *IndirectObject
 	for _, obj := range objects {
 		if obj.Number == refs.FontObjNum {
@@ -93,24 +93,46 @@ func TestTrueTypeFontWriter_WriteFont(t *testing.T) {
 
 	fontData := string(fontDict.Data)
 
-	// Verify font dictionary contents.
+	// Verify Type 0 font dictionary contents.
 	if !strings.Contains(fontData, "/Type /Font") {
 		t.Error("Missing /Type /Font in font dictionary")
 	}
-	if !strings.Contains(fontData, "/Subtype /TrueType") {
-		t.Error("Missing /Subtype /TrueType")
+	if !strings.Contains(fontData, "/Subtype /Type0") {
+		t.Error("Missing /Subtype /Type0")
 	}
 	if !strings.Contains(fontData, "/BaseFont /") {
 		t.Error("Missing /BaseFont")
 	}
-	if !strings.Contains(fontData, "/FontDescriptor") {
-		t.Error("Missing /FontDescriptor reference")
+	if !strings.Contains(fontData, "/DescendantFonts") {
+		t.Error("Missing /DescendantFonts reference")
 	}
 	if !strings.Contains(fontData, "/ToUnicode") {
 		t.Error("Missing /ToUnicode reference")
 	}
-	if !strings.Contains(fontData, "/Widths") {
-		t.Error("Missing /Widths array")
+	if !strings.Contains(fontData, "/Encoding /Identity-H") {
+		t.Error("Missing /Encoding /Identity-H")
+	}
+
+	// Find CIDFont (descendant font).
+	var cidFontDict *IndirectObject
+	for _, obj := range objects {
+		data := string(obj.Data)
+		if strings.Contains(data, "/Subtype /CIDFontType2") {
+			cidFontDict = obj
+			break
+		}
+	}
+
+	if cidFontDict == nil {
+		t.Fatal("CIDFont dictionary not found")
+	}
+
+	cidFontData := string(cidFontDict.Data)
+	if !strings.Contains(cidFontData, "/FontDescriptor") {
+		t.Error("Missing /FontDescriptor in CIDFont")
+	}
+	if !strings.Contains(cidFontData, "/CIDSystemInfo") {
+		t.Error("Missing /CIDSystemInfo in CIDFont")
 	}
 }
 

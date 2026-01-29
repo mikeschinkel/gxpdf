@@ -93,6 +93,33 @@ func (f *TTFFont) parseRequiredTables() error {
 		return fmt.Errorf("parse cmap table: %w", err)
 	}
 
+	// Parse optional tables for PDF embedding.
+	// These tables provide additional metrics for FontDescriptor.
+
+	// Parse post table (optional but recommended).
+	if _, ok := f.Tables["post"]; ok {
+		if err := f.parsePostTable(); err != nil {
+			// Non-fatal: use defaults.
+			f.ItalicAngle = 0
+		}
+	}
+
+	// Parse OS/2 table (optional but recommended).
+	if _, ok := f.Tables["OS/2"]; ok {
+		if err := f.parseOS2Table(); err != nil {
+			// Non-fatal: use defaults.
+			f.CapHeight = f.Ascender
+		}
+	}
+
+	// Parse name table for PostScript name (optional).
+	if _, ok := f.Tables["name"]; ok {
+		_ = f.parseNameTable() // Best effort.
+	}
+
+	// Calculate derived values.
+	f.calculateDerivedMetrics()
+
 	return nil
 }
 
@@ -125,6 +152,25 @@ func (f *TTFFont) parseHeadTable() error {
 		return fmt.Errorf("read unitsPerEm: %w", err)
 	}
 
+	// Skip created and modified timestamps (8 bytes each = 16 bytes).
+	if err := skipBytes(r, 16); err != nil {
+		return err
+	}
+
+	// Read font bounding box: xMin, yMin, xMax, yMax (8 bytes total).
+	if err := binary.Read(r, binary.BigEndian, &f.FontBBox[0]); err != nil {
+		return fmt.Errorf("read xMin: %w", err)
+	}
+	if err := binary.Read(r, binary.BigEndian, &f.FontBBox[1]); err != nil {
+		return fmt.Errorf("read yMin: %w", err)
+	}
+	if err := binary.Read(r, binary.BigEndian, &f.FontBBox[2]); err != nil {
+		return fmt.Errorf("read xMax: %w", err)
+	}
+	if err := binary.Read(r, binary.BigEndian, &f.FontBBox[3]); err != nil {
+		return fmt.Errorf("read yMax: %w", err)
+	}
+
 	return nil
 }
 
@@ -142,12 +188,18 @@ func (f *TTFFont) parseHheaTable() error {
 		return err
 	}
 
-	// Skip ascender, descender, lineGap (6 bytes).
-	if err := skipBytes(r, 6); err != nil {
-		return err
+	// Read ascender, descender, lineGap (6 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.Ascender); err != nil {
+		return fmt.Errorf("read ascender: %w", err)
+	}
+	if err := binary.Read(r, binary.BigEndian, &f.Descender); err != nil {
+		return fmt.Errorf("read descender: %w", err)
+	}
+	if err := binary.Read(r, binary.BigEndian, &f.LineGap); err != nil {
+		return fmt.Errorf("read lineGap: %w", err)
 	}
 
-	// Skip other fields until numOfLongHorMetrics (28 bytes from start).
+	// Skip other fields until numOfLongHorMetrics (18 bytes).
 	if err := skipBytes(r, 18); err != nil {
 		return err
 	}
@@ -399,4 +451,300 @@ func skipBytes(r *bytes.Reader, n int64) error {
 		return fmt.Errorf("skip %d bytes: %w", n, err)
 	}
 	return nil
+}
+
+// parsePostTable parses the 'post' (PostScript) table.
+//
+// The post table contains:
+//   - ItalicAngle: Angle of italic text
+//   - UnderlinePosition: Position of underline
+//   - UnderlineThickness: Thickness of underline
+//   - IsFixedPitch: Whether font is monospaced
+//
+// Reference: TrueType specification, 'post' table.
+func (f *TTFFont) parsePostTable() error {
+	table, ok := f.Tables["post"]
+	if !ok {
+		return fmt.Errorf("post table not found")
+	}
+
+	if len(table.Data) < 32 {
+		return fmt.Errorf("post table too short: %d bytes", len(table.Data))
+	}
+
+	r := bytes.NewReader(table.Data)
+
+	// Skip version (4 bytes).
+	if err := skipBytes(r, 4); err != nil {
+		return err
+	}
+
+	// Read italicAngle as Fixed (16.16 format).
+	var italicAngleFixed int32
+	if err := binary.Read(r, binary.BigEndian, &italicAngleFixed); err != nil {
+		return fmt.Errorf("read italicAngle: %w", err)
+	}
+	// Convert Fixed 16.16 to float64.
+	f.ItalicAngle = float64(italicAngleFixed) / 65536.0
+
+	// Read underlinePosition (FWord = int16).
+	if err := binary.Read(r, binary.BigEndian, &f.UnderlinePosition); err != nil {
+		return fmt.Errorf("read underlinePosition: %w", err)
+	}
+
+	// Read underlineThickness (FWord = int16).
+	if err := binary.Read(r, binary.BigEndian, &f.UnderlineThickness); err != nil {
+		return fmt.Errorf("read underlineThickness: %w", err)
+	}
+
+	// Read isFixedPitch (uint32).
+	var isFixedPitch uint32
+	if err := binary.Read(r, binary.BigEndian, &isFixedPitch); err != nil {
+		return fmt.Errorf("read isFixedPitch: %w", err)
+	}
+	f.IsFixedPitch = isFixedPitch != 0
+
+	return nil
+}
+
+// parseOS2Table parses the 'OS/2' (OS/2 and Windows metrics) table.
+//
+// The OS/2 table contains:
+//   - WeightClass: Font weight (100-900)
+//   - WidthClass: Font width (1-9)
+//   - FSType: Embedding licensing rights
+//   - CapHeight: Height of capital letters
+//   - XHeight: Height of lowercase x
+//
+// Reference: TrueType specification, 'OS/2' table.
+func (f *TTFFont) parseOS2Table() error {
+	table, ok := f.Tables["OS/2"]
+	if !ok {
+		return fmt.Errorf("OS/2 table not found")
+	}
+
+	if len(table.Data) < 78 {
+		return fmt.Errorf("OS/2 table too short: %d bytes", len(table.Data))
+	}
+
+	r := bytes.NewReader(table.Data)
+
+	// Read version (2 bytes).
+	var version uint16
+	if err := binary.Read(r, binary.BigEndian, &version); err != nil {
+		return fmt.Errorf("read version: %w", err)
+	}
+
+	// Skip xAvgCharWidth (2 bytes).
+	if err := skipBytes(r, 2); err != nil {
+		return err
+	}
+
+	// Read usWeightClass (2 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.WeightClass); err != nil {
+		return fmt.Errorf("read usWeightClass: %w", err)
+	}
+
+	// Read usWidthClass (2 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.WidthClass); err != nil {
+		return fmt.Errorf("read usWidthClass: %w", err)
+	}
+
+	// Read fsType (2 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.FSType); err != nil {
+		return fmt.Errorf("read fsType: %w", err)
+	}
+
+	// Skip to sTypoAscender (offset 68).
+	// Current position is 12, need to skip to 68.
+	if err := skipBytes(r, 56); err != nil {
+		return err
+	}
+
+	// Read sTypoAscender (2 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.TypoAscender); err != nil {
+		return fmt.Errorf("read sTypoAscender: %w", err)
+	}
+
+	// Read sTypoDescender (2 bytes).
+	if err := binary.Read(r, binary.BigEndian, &f.TypoDescender); err != nil {
+		return fmt.Errorf("read sTypoDescender: %w", err)
+	}
+
+	// Skip sTypoLineGap (2 bytes).
+	if err := skipBytes(r, 2); err != nil {
+		return err
+	}
+
+	// Skip usWinAscent, usWinDescent (4 bytes).
+	if err := skipBytes(r, 4); err != nil {
+		return err
+	}
+
+	// For version >= 2, read sxHeight and sCapHeight.
+	if version >= 2 && len(table.Data) >= 96 {
+		// Skip ulCodePageRange1, ulCodePageRange2 (8 bytes).
+		if err := skipBytes(r, 8); err != nil {
+			return err
+		}
+
+		// Read sxHeight (2 bytes).
+		if err := binary.Read(r, binary.BigEndian, &f.XHeight); err != nil {
+			return fmt.Errorf("read sxHeight: %w", err)
+		}
+
+		// Read sCapHeight (2 bytes).
+		if err := binary.Read(r, binary.BigEndian, &f.CapHeight); err != nil {
+			return fmt.Errorf("read sCapHeight: %w", err)
+		}
+	} else {
+		// Estimate CapHeight as 70% of Ascender.
+		f.CapHeight = int16(float64(f.Ascender) * 0.7)
+		f.XHeight = int16(float64(f.Ascender) * 0.5)
+	}
+
+	return nil
+}
+
+// parseNameTable parses the 'name' table to extract PostScript name.
+//
+// Reference: TrueType specification, 'name' table.
+func (f *TTFFont) parseNameTable() error {
+	table, ok := f.Tables["name"]
+	if !ok {
+		return fmt.Errorf("name table not found")
+	}
+
+	if len(table.Data) < 6 {
+		return fmt.Errorf("name table too short")
+	}
+
+	r := bytes.NewReader(table.Data)
+
+	// Read format (2 bytes).
+	var format uint16
+	if err := binary.Read(r, binary.BigEndian, &format); err != nil {
+		return fmt.Errorf("read format: %w", err)
+	}
+
+	// Read count (2 bytes).
+	var count uint16
+	if err := binary.Read(r, binary.BigEndian, &count); err != nil {
+		return fmt.Errorf("read count: %w", err)
+	}
+
+	// Read stringOffset (2 bytes).
+	var stringOffset uint16
+	if err := binary.Read(r, binary.BigEndian, &stringOffset); err != nil {
+		return fmt.Errorf("read stringOffset: %w", err)
+	}
+
+	// Search for PostScript name (nameID = 6).
+	for i := uint16(0); i < count; i++ {
+		var platformID, encodingID, languageID, nameID, length, offset uint16
+
+		if err := binary.Read(r, binary.BigEndian, &platformID); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &encodingID); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &languageID); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &nameID); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &length); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.BigEndian, &offset); err != nil {
+			return err
+		}
+
+		// PostScript name has nameID = 6.
+		if nameID == 6 {
+			strStart := uint32(stringOffset) + uint32(offset)
+			strEnd := strStart + uint32(length)
+			if strEnd <= uint32(len(table.Data)) {
+				nameData := table.Data[strStart:strEnd]
+
+				// Platform 3 (Windows) uses UTF-16BE.
+				if platformID == 3 {
+					f.PostScriptName = decodeUTF16BE(nameData)
+				} else {
+					// Platform 1 (Mac) uses ASCII/MacRoman.
+					f.PostScriptName = string(nameData)
+				}
+				return nil
+			}
+		}
+	}
+
+	// If PostScript name not found, use filename.
+	return nil
+}
+
+// decodeUTF16BE decodes UTF-16 Big Endian bytes to string.
+func decodeUTF16BE(data []byte) string {
+	if len(data)%2 != 0 {
+		return ""
+	}
+
+	runes := make([]rune, 0, len(data)/2)
+	for i := 0; i < len(data); i += 2 {
+		r := rune(binary.BigEndian.Uint16(data[i:]))
+		runes = append(runes, r)
+	}
+	return string(runes)
+}
+
+// calculateDerivedMetrics calculates derived font metrics.
+//
+// This includes:
+//   - StemV: Estimated vertical stem width
+//   - Flags: PDF font flags bitmap
+func (f *TTFFont) calculateDerivedMetrics() {
+	// Estimate StemV from weight class.
+	// Light fonts (100-300): 50-70
+	// Normal fonts (400): 80
+	// Medium fonts (500): 90
+	// Bold fonts (600-700): 100-120
+	// Black fonts (800-900): 130-150
+	switch {
+	case f.WeightClass <= 300:
+		f.StemV = 50 + int16(f.WeightClass/10)
+	case f.WeightClass <= 500:
+		f.StemV = 80 + int16((f.WeightClass-400)/5)
+	case f.WeightClass <= 700:
+		f.StemV = 100 + int16((f.WeightClass-500)/5)
+	default:
+		f.StemV = 130 + int16((f.WeightClass-700)/10)
+	}
+
+	// Default StemV if weight class is 0.
+	if f.StemV == 0 || f.WeightClass == 0 {
+		f.StemV = 80 // Normal weight default.
+	}
+
+	// Calculate PDF font flags.
+	// Bit 1 (1): FixedPitch
+	// Bit 2 (2): Serif (not easily detectable, skip)
+	// Bit 3 (4): Symbolic (skip for now)
+	// Bit 4 (8): Script (skip for now)
+	// Bit 6 (32): Nonsymbolic (standard Latin font)
+	// Bit 7 (64): Italic
+	// Bit 17 (65536): AllCap (skip)
+	// Bit 18 (131072): SmallCap (skip)
+	// Bit 19 (262144): ForceBold (skip)
+
+	f.Flags = 32 // Nonsymbolic by default.
+
+	if f.IsFixedPitch {
+		f.Flags |= 1
+	}
+
+	if f.ItalicAngle != 0 {
+		f.Flags |= 64
+	}
 }

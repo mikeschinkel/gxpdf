@@ -116,3 +116,19 @@ func (f *CustomFont) UnitsPerEm() uint16 {
 func (f *CustomFont) GetSubset() *fonts.FontSubset {
 	return f.subset
 }
+
+// GetTTF returns the parsed TrueType font (for internal use).
+func (f *CustomFont) GetTTF() *fonts.TTFFont {
+	return f.ttfFont
+}
+
+// ID returns a unique identifier for this font instance.
+//
+// The ID is used to track fonts across pages and avoid duplicates.
+func (f *CustomFont) ID() string {
+	// Use PostScript name or derive from file path.
+	if f.ttfFont.PostScriptName != "" {
+		return f.ttfFont.PostScriptName
+	}
+	return f.ttfFont.FilePath
+}

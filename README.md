@@ -174,6 +174,7 @@ github.com/coregx/gxpdf
 
 - **[API Reference](https://pkg.go.dev/github.com/coregx/gxpdf)** - Full API documentation
 - **[Examples](examples/)** - Code examples for all features
+- **[Enterprise Brochure (PDF)](assets/gxpdf_enterprise_brochure.pdf)** - Sample PDF created with GxPDF
 - **[Architecture](docs/ARCHITECTURE.md)** - DDD architecture overview
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
 - **[Security](SECURITY.md)** - Security policy

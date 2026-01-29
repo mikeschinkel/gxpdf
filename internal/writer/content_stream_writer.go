@@ -143,6 +143,20 @@ func (csw *ContentStreamWriter) ShowText(text string) {
 	csw.writeOp(fmt.Sprintf("(%s)", escaped), "Tj")
 }
 
+// ShowTextEncoded shows pre-encoded text using hex string (Tj operator).
+//
+// This is used for embedded fonts where the text is already encoded
+// as a hex string (e.g., "<0048006500>").
+//
+// Parameters:
+//   - encodedText: Hex-encoded string including angle brackets
+//
+// Reference: PDF 1.7 Spec, Section 9.4.3 (Text-Showing Operators).
+func (csw *ContentStreamWriter) ShowTextEncoded(encodedText string) {
+	// encodedText is already in the format "<XXXX>" so use directly.
+	csw.writeOp(encodedText, "Tj")
+}
+
 // ShowTextNextLine moves to next line and shows text (' operator).
 //
 // Equivalent to: T* followed by Tj.

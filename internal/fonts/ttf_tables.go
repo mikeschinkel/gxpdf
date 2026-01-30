@@ -719,21 +719,28 @@ func (f *TTFFont) parseNameTable() error {
 		}
 
 		// PostScript name has nameID = 6.
-		if nameID == 6 {
-			strStart := uint32(stringOffset) + uint32(offset)
-			strEnd := strStart + uint32(length)
-			if strEnd <= uint32(len(table.Data)) {
-				nameData := table.Data[strStart:strEnd]
+		if nameID != 6 {
+			continue
+		}
 
-				// Platform 3 (Windows) uses UTF-16BE.
-				if platformID == 3 {
-					f.PostScriptName = decodeUTF16BE(nameData)
-				} else {
-					// Platform 1 (Mac) uses ASCII/MacRoman.
-					f.PostScriptName = string(nameData)
-				}
-				return nil
-			}
+		strStart := uint32(stringOffset) + uint32(offset)
+		strEnd := strStart + uint32(length)
+		if strEnd > uint32(len(table.Data)) {
+			continue
+		}
+
+		nameData := table.Data[strStart:strEnd]
+
+		// Platform 1 (Mac) uses ASCII/MacRoman - preferred (simple).
+		if platformID == 1 {
+			f.PostScriptName = string(nameData)
+			return nil
+		}
+
+		// Platform 0 (Unicode) and 3 (Windows) use UTF-16BE.
+		if platformID == 0 || platformID == 3 {
+			f.PostScriptName = decodeUTF16BE(nameData)
+			// Don't return yet - prefer platform 1 if available.
 		}
 	}
 
@@ -750,7 +757,10 @@ func decodeUTF16BE(data []byte) string {
 	runes := make([]rune, 0, len(data)/2)
 	for i := 0; i < len(data); i += 2 {
 		r := rune(binary.BigEndian.Uint16(data[i:]))
-		runes = append(runes, r)
+		// Skip NUL characters (common in UTF-16BE for ASCII).
+		if r != 0 {
+			runes = append(runes, r)
+		}
 	}
 	return string(runes)
 }

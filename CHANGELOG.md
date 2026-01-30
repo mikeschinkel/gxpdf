@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Form filling (fill existing PDF forms)
+- Form flattening (convert forms to static content)
+- Digital signatures (sign and verify)
+
+---
+
+## [0.1.1] - 2026-01-30
+
 ### Added
 - **Full Unicode Font Embedding** - Complete TrueType/OpenType infrastructure
   - Cyrillic, CJK (Chinese, Japanese, Korean), and special symbols support
@@ -21,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **hhea Table Parsing** - Corrected numOfLongHorMetrics offset for proper glyph widths
 - **Glyph Width Calculation** - Fixed empty GlyphWidths map issue
+- **PostScriptName Parsing** - Fixed UTF-16BE decoding in `name` table (was causing garbled font names and rendering issues in PDF viewers)
 
 ### Planned
 - Form filling (fill existing PDF forms)
@@ -107,5 +117,6 @@ Initial public release of GxPDF - a modern, enterprise-grade PDF library for Go.
 
 ---
 
-[Unreleased]: https://github.com/coregx/gxpdf/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/coregx/gxpdf/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/coregx/gxpdf/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/coregx/gxpdf/releases/tag/v0.1.0

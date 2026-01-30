@@ -69,7 +69,7 @@ type glyphMapping struct {
 // This CMap maps those glyph IDs back to Unicode code points for text extraction.
 func writeCharMappings(buf *bytes.Buffer, subset *FontSubset) error {
 	// Build glyph ID → Unicode mappings.
-	var mappings []glyphMapping
+	mappings := make([]glyphMapping, 0, len(subset.UsedChars))
 
 	for ch := range subset.UsedChars {
 		glyphID, ok := subset.BaseFont.CharToGlyph[ch]

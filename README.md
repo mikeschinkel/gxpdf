@@ -1,5 +1,7 @@
 # GxPDF - Enterprise-Grade PDF Library for Go
 
+![GxPDF Cover](assets/gh_cover.png)
+
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/coregx/gxpdf/actions/workflows/test.yml/badge.svg)](https://github.com/coregx/gxpdf/actions/workflows/test.yml)

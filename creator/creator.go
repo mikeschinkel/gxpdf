@@ -779,6 +779,22 @@ func convertGraphicsOps(ops []GraphicsOperation) []writer.GraphicsOp {
 			}
 		}
 
+		// Convert TextBlock fields
+		if op.Type == GraphicsOpTextBlock && op.TextFont != nil {
+			gop.Text = op.Text
+			gop.TextFont = &writer.EmbeddedFont{
+				TTF:    op.TextFont.GetTTF(),
+				Subset: op.TextFont.GetSubset(),
+				ID:     op.TextFont.ID(),
+			}
+			gop.TextSize = op.TextSize
+			if op.TextColor != nil {
+				gop.TextColorR = op.TextColor.R
+				gop.TextColorG = op.TextColor.G
+				gop.TextColorB = op.TextColor.B
+			}
+		}
+
 		convertGraphicsOptions(&gop, &op)
 		graphicsOps = append(graphicsOps, gop)
 	}

@@ -117,9 +117,9 @@ func TestGenerateToUnicodeCMapLargeBatch(t *testing.T) {
 func TestGlyphMappingOrder(t *testing.T) {
 	ttf := &TTFFont{
 		CharToGlyph: map[rune]uint16{
-			'Z': 90,  // Higher glyph ID
-			'A': 36,  // Lower glyph ID
-			'M': 77,  // Middle glyph ID
+			'Z': 90, // Higher glyph ID
+			'A': 36, // Lower glyph ID
+			'M': 77, // Middle glyph ID
 		},
 	}
 

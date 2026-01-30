@@ -127,6 +127,26 @@ type GraphicsOp struct {
 	Dashed          bool
 	DashArray       []float64
 	DashPhase       float64
+
+	// Clipping
+	IsClipPath bool // If true, this shape defines a clipping path (not drawn)
+
+	// TextBlock fields (for Type == 22)
+	Text       string
+	TextFont   *EmbeddedFont
+	TextSize   float64
+	TextColorR float64
+	TextColorG float64
+	TextColorB float64
+}
+
+// ClipOp represents a clipping operation (begin or end).
+type ClipOp struct {
+	Type   int // 0 = BeginClip, 1 = EndClip
+	X      float64
+	Y      float64
+	Width  float64
+	Height float64
 }
 
 // GradientType represents the type of gradient.
@@ -203,7 +223,7 @@ func GenerateContentStreamWithGraphics(textOps []TextOp, graphicsOps []GraphicsO
 
 	// STEP 1: Draw graphics FIRST (so text appears on top)
 	for _, gop := range graphicsOps {
-		if err := renderGraphicsOp(csw, gop); err != nil {
+		if err := renderGraphicsOp(csw, gop, resources); err != nil {
 			return nil, nil, fmt.Errorf("failed to render graphics: %w", err)
 		}
 	}
@@ -264,8 +284,20 @@ func GenerateContentStreamWithGraphics(textOps []TextOp, graphicsOps []GraphicsO
 }
 
 // renderGraphicsOp renders a single graphics operation to the content stream.
-func renderGraphicsOp(csw *ContentStreamWriter, gop GraphicsOp) error {
-	// Save graphics state
+func renderGraphicsOp(csw *ContentStreamWriter, gop GraphicsOp, resources *ResourceDictionary) error {
+	// Clipping and text operations manage their own state - don't wrap them.
+	if gop.Type == 20 || gop.Type == 21 || gop.Type == 22 {
+		switch gop.Type {
+		case 20: // BeginClipRect - starts a clipping region
+			return renderBeginClipRect(csw, gop)
+		case 21: // EndClip - ends clipping region
+			return renderEndClip(csw)
+		case 22: // TextBlock - text rendered inline with graphics
+			return renderTextBlock(csw, gop, resources)
+		}
+	}
+
+	// Save graphics state for regular drawing operations.
 	csw.SaveState()
 
 	switch gop.Type {
@@ -378,6 +410,77 @@ func renderRect(csw *ContentStreamWriter, gop GraphicsOp) error {
 
 	// Restore graphics state
 	csw.RestoreState()
+	return nil
+}
+
+// renderBeginClipRect starts a rectangular clipping region.
+//
+// This saves the graphics state, defines a rectangle path, and sets it as the clipping path.
+// All subsequent drawing operations will be clipped to this rectangle until EndClip is called.
+//
+// Usage:
+//
+//	BeginClipRect(x, y, width, height)
+//	... draw content that should be clipped ...
+//	EndClip()
+func renderBeginClipRect(csw *ContentStreamWriter, gop GraphicsOp) error {
+	// Save graphics state (so we can restore after clipping).
+	csw.SaveState()
+
+	// Define rectangle path.
+	csw.Rectangle(gop.X, gop.Y, gop.Width, gop.Height)
+
+	// Set clipping path and end path (W n).
+	csw.Clip()
+	csw.EndPath()
+
+	// Note: We do NOT restore state here - clipping remains active.
+	// The caller must call EndClip (type 21) to restore state.
+	return nil
+}
+
+// renderEndClip ends a clipping region by restoring the graphics state.
+func renderEndClip(csw *ContentStreamWriter) error {
+	csw.RestoreState()
+	return nil
+}
+
+// renderTextBlock renders a text block inline with graphics operations.
+//
+// This is used for clipped text where the text needs to be rendered between
+// BeginClip and EndClip operations.
+func renderTextBlock(csw *ContentStreamWriter, gop GraphicsOp, resources *ResourceDictionary) error {
+	if gop.TextFont == nil {
+		return fmt.Errorf("TextFont is required for TextBlock")
+	}
+
+	// Get or create font resource name.
+	fontKey := "custom:" + gop.TextFont.ID
+	fontResName := resources.GetFontResourceName(fontKey)
+	if fontResName == "" {
+		// Register the font.
+		fontObjNum := 0 // Will be set by caller via SetFontObjNumByID
+		fontResName = resources.AddFontWithID(fontObjNum, fontKey)
+	}
+
+	// Begin text object.
+	csw.BeginText()
+
+	// Set fill color.
+	csw.SetFillColorRGB(gop.TextColorR, gop.TextColorG, gop.TextColorB)
+
+	// Set font and size.
+	csw.SetFont(fontResName, gop.TextSize)
+
+	// Set position.
+	csw.MoveTextPosition(gop.X, gop.Y)
+
+	// Show text (encode using glyph IDs for embedded font).
+	csw.ShowTextEncoded(encodeTextForEmbeddedFont(gop.Text, gop.TextFont))
+
+	// End text object.
+	csw.EndText()
+
 	return nil
 }
 
@@ -730,11 +833,20 @@ func CreateFontObjects(textOps []TextOp) (map[string]*fonts.Standard14Font, erro
 //   - Standard14: Map of font name -> Standard14Font
 //   - Embedded: Map of font ID -> EmbeddedFont
 func CreateFontCollection(textOps []TextOp) (*FontCollection, error) {
+	return CreateFontCollectionWithGraphics(textOps, nil)
+}
+
+// CreateFontCollectionWithGraphics creates a collection of all fonts used in text and graphics operations.
+//
+// This handles both Standard14 fonts (built-in) and embedded TrueType fonts,
+// including fonts used in TextBlock graphics operations.
+func CreateFontCollectionWithGraphics(textOps []TextOp, graphicsOps []GraphicsOp) (*FontCollection, error) {
 	collection := &FontCollection{
 		Standard14: make(map[string]*fonts.Standard14Font),
 		Embedded:   make(map[string]*EmbeddedFont),
 	}
 
+	// Collect fonts from text operations.
 	for _, op := range textOps {
 		// Handle custom embedded fonts.
 		if op.CustomFont != nil {
@@ -755,6 +867,15 @@ func CreateFontCollection(textOps []TextOp) (*FontCollection, error) {
 		}
 
 		collection.Standard14[op.Font] = font
+	}
+
+	// Collect fonts from graphics operations (TextBlock).
+	for _, gop := range graphicsOps {
+		if gop.Type == 22 && gop.TextFont != nil { // Type 22 = TextBlock
+			if _, exists := collection.Embedded[gop.TextFont.ID]; !exists {
+				collection.Embedded[gop.TextFont.ID] = gop.TextFont
+			}
+		}
 	}
 
 	return collection, nil

@@ -65,6 +65,9 @@ func (rd *ResourceDictionary) AddFont(objNum int) string {
 // The fontID is used to later set the correct object number via SetFontObjNumByID.
 // This enables correct font object assignment when fonts are created after content streams.
 //
+// If a font with the same fontID already exists, returns the existing resource name
+// instead of creating a duplicate entry.
+//
 // Parameters:
 //   - objNum: PDF object number (can be 0 as placeholder)
 //   - fontID: Unique identifier for this font (e.g., "custom:font_1" or "std:Helvetica")
@@ -72,6 +75,12 @@ func (rd *ResourceDictionary) AddFont(objNum int) string {
 // Returns:
 //   - Resource name (e.g., "F1")
 func (rd *ResourceDictionary) AddFontWithID(objNum int, fontID string) string {
+	// If font with this ID already exists, return existing resource name.
+	if existingName, exists := rd.fontIDs[fontID]; exists {
+		return existingName
+	}
+
+	// Create new resource name.
 	name := fmt.Sprintf("F%d", len(rd.fonts)+1)
 	rd.fonts[name] = objNum
 	rd.fontIDs[fontID] = name
@@ -101,6 +110,13 @@ func (rd *ResourceDictionary) GetFontIDMapping() map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+// GetFontResourceName returns the resource name for a font ID.
+//
+// Returns empty string if the font ID is not found.
+func (rd *ResourceDictionary) GetFontResourceName(fontID string) string {
+	return rd.fontIDs[fontID]
 }
 
 // AddImage adds an image XObject resource and returns its resource name.

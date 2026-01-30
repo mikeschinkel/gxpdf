@@ -370,9 +370,14 @@ go test -bench=. -benchmem ./...
 
 ## Future Roadmap
 
+### v0.1.1 (Current)
+
+- [x] Full Unicode font embedding (Cyrillic, CJK, symbols)
+- [x] TrueType font subsetting with ToUnicode CMap
+- [x] Enterprise-grade PDF showcase
+
 ### v0.2.0 (Planned)
 
-- [ ] Full Unicode font embedding integration
 - [ ] Form filling (populate existing forms)
 - [ ] Form flattening
 - [ ] Digital signatures

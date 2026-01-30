@@ -294,6 +294,32 @@ func (csw *ContentStreamWriter) EndPath() {
 	csw.writeOp("", "n")
 }
 
+// Clip sets the clipping path using nonzero winding rule (W operator).
+//
+// Must be called after defining a path (e.g., Rectangle) and before EndPath.
+// Subsequent drawing operations will be clipped to this path.
+//
+// Example:
+//
+//	csw.SaveState()
+//	csw.Rectangle(x, y, w, h)
+//	csw.Clip()
+//	csw.EndPath()
+//	// ... draw content that will be clipped ...
+//	csw.RestoreState()
+//
+// Reference: PDF 1.7 Spec, Section 8.5.4 (Clipping Path Operators).
+func (csw *ContentStreamWriter) Clip() {
+	csw.writeOp("", "W")
+}
+
+// ClipEvenOdd sets the clipping path using even-odd rule (W* operator).
+//
+// Reference: PDF 1.7 Spec, Section 8.5.4 (Clipping Path Operators).
+func (csw *ContentStreamWriter) ClipEvenOdd() {
+	csw.writeOp("", "W*")
+}
+
 // --- GRAPHICS STATE OPERATORS ---
 
 // SaveState saves the graphics state (q operator).

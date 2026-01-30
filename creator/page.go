@@ -394,6 +394,113 @@ func (p *Page) DrawRectFilled(x, y, width, height float64, fillColor Color) erro
 	return p.DrawRect(x, y, width, height, opts)
 }
 
+// BeginClipRect begins a rectangular clipping region.
+//
+// All subsequent drawing operations (shapes, text, images) will be clipped
+// to the specified rectangle. Content outside the rectangle will not be visible.
+//
+// This is useful for tables where text should not overflow cell boundaries.
+//
+// You MUST call EndClip() after drawing the clipped content to restore
+// the previous graphics state. Clipping regions can be nested.
+//
+// Parameters:
+//   - x, y: Lower-left corner of the clipping rectangle
+//   - width, height: Size of the clipping rectangle
+//
+// Example:
+//
+//	// Clip text to a cell boundary
+//	page.BeginClipRect(100, 500, 200, 30)
+//	page.AddText("Very long text that would overflow...", 105, 510, opts)
+//	page.EndClip()
+func (p *Page) BeginClipRect(x, y, width, height float64) error {
+	if width <= 0 || height <= 0 {
+		return errors.New("clipping rectangle must have positive width and height")
+	}
+
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:   GraphicsOpBeginClip,
+		X:      x,
+		Y:      y,
+		Width:  width,
+		Height: height,
+	})
+
+	return nil
+}
+
+// EndClip ends a clipping region started by BeginClipRect.
+//
+// This restores the graphics state to what it was before BeginClipRect was called.
+// Every BeginClipRect MUST have a matching EndClip.
+func (p *Page) EndClip() error {
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type: GraphicsOpEndClip,
+	})
+
+	return nil
+}
+
+// DrawTextClipped draws text that is clipped to a rectangular region.
+//
+// This is useful for table cells where text should not overflow the cell boundary.
+// Text that extends beyond the clipping rectangle will be cut off (not visible).
+//
+// Parameters:
+//   - text: The text to render
+//   - textX, textY: Position of the text baseline
+//   - clipX, clipY, clipW, clipH: Clipping rectangle (text outside is hidden)
+//   - font: Custom font to use
+//   - fontSize: Font size in points
+//   - color: Text color
+//
+// Example:
+//
+//	// Draw text clipped to a 100pt wide cell
+//	page.DrawTextClipped("Very long text...", 55, 510, 50, 500, 100, 30, font, 10, Black)
+func (p *Page) DrawTextClipped(text string, textX, textY, clipX, clipY, clipW, clipH float64, font *CustomFont, fontSize float64, color Color) error {
+	if font == nil {
+		return errors.New("font cannot be nil")
+	}
+	if fontSize <= 0 {
+		return errors.New("font size must be positive")
+	}
+	if clipW <= 0 || clipH <= 0 {
+		return errors.New("clipping rectangle must have positive dimensions")
+	}
+
+	// Mark characters as used for font subsetting.
+	font.UseString(text)
+
+	// Add BeginClip operation.
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:   GraphicsOpBeginClip,
+		X:      clipX,
+		Y:      clipY,
+		Width:  clipW,
+		Height: clipH,
+	})
+
+	// Add TextBlock operation (rendered inline with graphics).
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:      GraphicsOpTextBlock,
+		X:         textX,
+		Y:         textY,
+		Text:      text,
+		TextFont:  font,
+		TextSize:  fontSize,
+		TextColor: &color,
+	})
+
+	// Add EndClip operation.
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type: GraphicsOpEndClip,
+	})
+
+	return nil
+}
+
 // DrawCircle draws a circle at center (cx,cy) with given radius.
 //
 // The circle can be stroked, filled, or both, depending on the options.

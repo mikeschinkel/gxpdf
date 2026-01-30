@@ -7,6 +7,16 @@ import (
 	"github.com/coregx/gxpdf/internal/document"
 )
 
+// hasTextBlockOps checks if any graphics operations contain TextBlock (type 22).
+func hasTextBlockOps(graphicsOps []GraphicsOp) bool {
+	for _, gop := range graphicsOps {
+		if gop.Type == 22 { // TextBlock
+			return true
+		}
+	}
+	return false
+}
+
 // createPageTreeWithContent creates the Pages tree with content operations.
 //
 // This version accepts page content operations and generates content streams.
@@ -314,37 +324,48 @@ func (w *PdfWriter) createPageWithAllContent(
 
 	// Generate content stream with graphics and text
 	if len(textOps) > 0 || len(graphicsOps) > 0 {
-		// Generate content stream with both graphics and text
-		content, resources, err := GenerateContentStreamWithGraphics(textOps, graphicsOps)
-		if err != nil {
-			// For now, skip content on error
-			pageDict.WriteString(" /Resources << >>")
-			pageDict.WriteString(" >>")
-			return NewIndirectObject(objNum, 0, pageDict.Bytes()), nil, nil
-		}
-
-		// Create font objects and assign object numbers (only if we have text)
 		fontObjs = make([]*IndirectObject, 0)
-		if len(textOps) > 0 {
-			// Use CreateFontCollection to handle both Standard14 and embedded fonts.
-			fontCollection, err := CreateFontCollection(textOps)
+		hasTextContent := len(textOps) > 0 || hasTextBlockOps(graphicsOps)
+
+		// STEP 1: Collect fonts and BUILD SUBSETS FIRST.
+		// This is critical: content stream encoding needs GlyphMapping from built subsets.
+		var fontCollection *FontCollection
+		if hasTextContent {
+			var err error
+			fontCollection, err = CreateFontCollectionWithGraphics(textOps, graphicsOps)
 			if err != nil {
 				pageDict.WriteString(" /Resources << >>")
 				pageDict.WriteString(" >>")
 				return NewIndirectObject(objNum, 0, pageDict.Bytes()), nil, nil
 			}
 
+			// Build all embedded font subsets BEFORE generating content stream.
+			for _, embFont := range fontCollection.Embedded {
+				if embFont.Subset != nil {
+					_ = embFont.Subset.Build() // Ignore errors for now, will handle below.
+				}
+			}
+		}
+
+		// STEP 2: Generate content stream (now subsets are built, GlyphMapping available).
+		content, resources, err := GenerateContentStreamWithGraphics(textOps, graphicsOps)
+		if err != nil {
+			pageDict.WriteString(" /Resources << >>")
+			pageDict.WriteString(" >>")
+			return NewIndirectObject(objNum, 0, pageDict.Bytes()), nil, nil
+		}
+
+		// STEP 3: Create font objects and assign object numbers.
+		if fontCollection != nil {
 			// Process Standard14 fonts.
 			for fontName, fontDef := range fontCollection.Standard14 {
 				fontObjNum := w.allocateObjNum()
 
-				// Create font object using WriteFontObject
 				var fontBuf bytes.Buffer
 				if err := fontDef.WriteFontObject(fontObjNum, &fontBuf); err != nil {
 					continue
 				}
 
-				// Extract just the dictionary part (without N 0 obj and endobj)
 				fontBytes := fontBuf.Bytes()
 				dictStart := bytes.Index(fontBytes, []byte("<<"))
 				dictEnd := bytes.LastIndex(fontBytes, []byte(">>")) + 2
@@ -353,32 +374,21 @@ func (w *PdfWriter) createPageWithAllContent(
 					fontDict := fontBytes[dictStart:dictEnd]
 					fontObjs = append(fontObjs, NewIndirectObject(fontObjNum, 0, fontDict))
 
-					// Update resource dictionary using font ID.
 					fontKey := "std:" + fontName
 					resources.SetFontObjNumByID(fontKey, fontObjNum)
 				}
 			}
 
-			// Process embedded TrueType fonts.
+			// Process embedded TrueType fonts (subsets already built in STEP 1).
 			for fontID, embFont := range fontCollection.Embedded {
-				// Build font subset.
-				if embFont.Subset != nil {
-					if err := embFont.Subset.Build(); err != nil {
-						continue
-					}
-				}
-
-				// Create TrueType font writer.
 				fontWriter := NewTrueTypeFontWriter(embFont.TTF, embFont.Subset, w.allocateObjNum)
 				fontObjects, refs, err := fontWriter.WriteFont()
 				if err != nil {
 					continue
 				}
 
-				// Add all font objects.
 				fontObjs = append(fontObjs, fontObjects...)
 
-				// Update resource dictionary using font ID.
 				fontKey := "custom:" + fontID
 				resources.SetFontObjNumByID(fontKey, refs.FontObjNum)
 			}

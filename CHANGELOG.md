@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Full Unicode Font Embedding** - Complete TrueType/OpenType infrastructure
+  - Cyrillic, CJK (Chinese, Japanese, Korean), and special symbols support
+  - TTF parser extensions: `post`, `OS/2`, `name` table parsing
+  - FontDescriptor generator with all PDF metrics
+  - ToUnicode CMap generation for text extraction
+  - Font subsetting with deterministic naming (XXXXXX+FontName)
+  - Type 0 Composite Font support for full Unicode range
+- **Text Clipping** - Clip text to table cell boundaries
+- **Enterprise Showcase** - Professional 7-page PDF brochure demonstrating all features
+
+### Fixed
+- **hhea Table Parsing** - Corrected numOfLongHorMetrics offset for proper glyph widths
+- **Glyph Width Calculation** - Fixed empty GlyphWidths map issue
+
 ### Planned
 - Form filling (fill existing PDF forms)
 - Form flattening (convert forms to static content)

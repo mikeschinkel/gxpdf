@@ -210,6 +210,70 @@ func (p *Page) AddTextColorCMYK(text string, x, y float64, font FontName, size f
 	return nil
 }
 
+// AddTextCustomFont adds text using an embedded TrueType/OpenType font.
+//
+// This method supports Unicode text including Cyrillic, CJK, Arabic, and symbols.
+// The font is automatically subset to include only the glyphs used in the document.
+//
+// Parameters:
+//   - text: The string to display (supports Unicode)
+//   - x: Horizontal position in points (from left edge)
+//   - y: Vertical position in points (from bottom edge)
+//   - font: Custom font loaded via LoadFont()
+//   - size: Font size in points
+//
+// Example:
+//
+//	font, _ := creator.LoadFont("fonts/OpenSans-Regular.ttf")
+//	err := page.AddTextCustomFont("Привет мир! 你好世界!", 100, 700, font, 24)
+func (p *Page) AddTextCustomFont(text string, x, y float64, font *CustomFont, size float64) error {
+	return p.AddTextCustomFontColor(text, x, y, font, size, Black)
+}
+
+// AddTextCustomFontColor adds colored text using an embedded TrueType/OpenType font.
+//
+// This method supports Unicode text including Cyrillic, CJK, Arabic, and symbols.
+// The font is automatically subset to include only the glyphs used in the document.
+//
+// Parameters:
+//   - text: The string to display (supports Unicode)
+//   - x: Horizontal position in points (from left edge)
+//   - y: Vertical position in points (from bottom edge)
+//   - font: Custom font loaded via LoadFont()
+//   - size: Font size in points
+//   - color: Text color (RGB, 0.0 to 1.0 range)
+//
+// Example:
+//
+//	font, _ := creator.LoadFont("fonts/OpenSans-Bold.ttf")
+//	err := page.AddTextCustomFontColor("重要!", 100, 700, font, 24, creator.Red)
+func (p *Page) AddTextCustomFontColor(text string, x, y float64, font *CustomFont, size float64, color Color) error {
+	if font == nil {
+		return errors.New("font cannot be nil")
+	}
+	if size <= 0 {
+		return errors.New("font size must be positive")
+	}
+	if color.R < 0 || color.R > 1 || color.G < 0 || color.G > 1 || color.B < 0 || color.B > 1 {
+		return errors.New("color components must be in range [0.0, 1.0]")
+	}
+
+	// Mark characters as used for font subsetting.
+	font.UseString(text)
+
+	// Store text operation with custom font.
+	p.textOps = append(p.textOps, TextOperation{
+		Text:       text,
+		X:          x,
+		Y:          y,
+		CustomFont: font,
+		Size:       size,
+		Color:      color,
+	})
+
+	return nil
+}
+
 // TextOperations returns all text operations for this page.
 //
 // This is used by the writer infrastructure to generate the content stream.
@@ -328,6 +392,113 @@ func (p *Page) DrawRectFilled(x, y, width, height float64, fillColor Color) erro
 		FillColor: &fillColor,
 	}
 	return p.DrawRect(x, y, width, height, opts)
+}
+
+// BeginClipRect begins a rectangular clipping region.
+//
+// All subsequent drawing operations (shapes, text, images) will be clipped
+// to the specified rectangle. Content outside the rectangle will not be visible.
+//
+// This is useful for tables where text should not overflow cell boundaries.
+//
+// You MUST call EndClip() after drawing the clipped content to restore
+// the previous graphics state. Clipping regions can be nested.
+//
+// Parameters:
+//   - x, y: Lower-left corner of the clipping rectangle
+//   - width, height: Size of the clipping rectangle
+//
+// Example:
+//
+//	// Clip text to a cell boundary
+//	page.BeginClipRect(100, 500, 200, 30)
+//	page.AddText("Very long text that would overflow...", 105, 510, opts)
+//	page.EndClip()
+func (p *Page) BeginClipRect(x, y, width, height float64) error {
+	if width <= 0 || height <= 0 {
+		return errors.New("clipping rectangle must have positive width and height")
+	}
+
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:   GraphicsOpBeginClip,
+		X:      x,
+		Y:      y,
+		Width:  width,
+		Height: height,
+	})
+
+	return nil
+}
+
+// EndClip ends a clipping region started by BeginClipRect.
+//
+// This restores the graphics state to what it was before BeginClipRect was called.
+// Every BeginClipRect MUST have a matching EndClip.
+func (p *Page) EndClip() error {
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type: GraphicsOpEndClip,
+	})
+
+	return nil
+}
+
+// DrawTextClipped draws text that is clipped to a rectangular region.
+//
+// This is useful for table cells where text should not overflow the cell boundary.
+// Text that extends beyond the clipping rectangle will be cut off (not visible).
+//
+// Parameters:
+//   - text: The text to render
+//   - textX, textY: Position of the text baseline
+//   - clipX, clipY, clipW, clipH: Clipping rectangle (text outside is hidden)
+//   - font: Custom font to use
+//   - fontSize: Font size in points
+//   - color: Text color
+//
+// Example:
+//
+//	// Draw text clipped to a 100pt wide cell
+//	page.DrawTextClipped("Very long text...", 55, 510, 50, 500, 100, 30, font, 10, Black)
+func (p *Page) DrawTextClipped(text string, textX, textY, clipX, clipY, clipW, clipH float64, font *CustomFont, fontSize float64, color Color) error {
+	if font == nil {
+		return errors.New("font cannot be nil")
+	}
+	if fontSize <= 0 {
+		return errors.New("font size must be positive")
+	}
+	if clipW <= 0 || clipH <= 0 {
+		return errors.New("clipping rectangle must have positive dimensions")
+	}
+
+	// Mark characters as used for font subsetting.
+	font.UseString(text)
+
+	// Add BeginClip operation.
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:   GraphicsOpBeginClip,
+		X:      clipX,
+		Y:      clipY,
+		Width:  clipW,
+		Height: clipH,
+	})
+
+	// Add TextBlock operation (rendered inline with graphics).
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type:      GraphicsOpTextBlock,
+		X:         textX,
+		Y:         textY,
+		Text:      text,
+		TextFont:  font,
+		TextSize:  fontSize,
+		TextColor: &color,
+	})
+
+	// Add EndClip operation.
+	p.graphicsOps = append(p.graphicsOps, GraphicsOperation{
+		Type: GraphicsOpEndClip,
+	})
+
+	return nil
 }
 
 // DrawCircle draws a circle at center (cx,cy) with given radius.

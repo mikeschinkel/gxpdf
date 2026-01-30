@@ -2,11 +2,21 @@
 
 Strategic development plan for the GxPDF PDF library.
 
-**Current Version**: v0.1.0
+**Current Version**: v0.1.1-dev
 
 ## Version History
 
-### v0.1.0 (Current)
+### v0.1.1 (In Progress)
+
+**Status**: In development
+
+Unicode font embedding infrastructure:
+- Full Unicode support (Cyrillic, CJK, symbols)
+- TrueType font subsetting with ToUnicode CMap
+- Type 0 Composite Font for full Unicode range
+- Enterprise showcase PDF demonstrating all features
+
+### v0.1.0
 
 **Released**: January 2026
 
@@ -63,6 +73,7 @@ Full-featured PDF library with:
 | Tables | Done | v0.1.0 |
 | Images (JPEG, PNG) | Done | v0.1.0 |
 | Fonts (Standard 14 + TTF) | Done | v0.1.0 |
+| Unicode Font Embedding | Done | v0.1.1 |
 | Chapters & TOC | Done | v0.1.0 |
 | Annotations | Done | v0.1.0 |
 | Interactive Forms | Done | v0.1.0 |

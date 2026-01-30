@@ -40,6 +40,65 @@ type TTFFont struct {
 
 	// FontData is the raw font file data (for embedding).
 	FontData []byte
+
+	// === Font metrics from head table ===
+
+	// FontBBox is the font bounding box [xMin, yMin, xMax, yMax].
+	FontBBox [4]int16
+
+	// === Font metrics from hhea table ===
+
+	// Ascender is the typographic ascender (from hhea).
+	Ascender int16
+
+	// Descender is the typographic descender (from hhea, negative).
+	Descender int16
+
+	// LineGap is the typographic line gap (from hhea).
+	LineGap int16
+
+	// === Font metrics from post table ===
+
+	// ItalicAngle is the italic angle in degrees (from post table).
+	ItalicAngle float64
+
+	// UnderlinePosition is the underline position (from post table).
+	UnderlinePosition int16
+
+	// UnderlineThickness is the underline thickness (from post table).
+	UnderlineThickness int16
+
+	// IsFixedPitch indicates if the font is monospaced (from post table).
+	IsFixedPitch bool
+
+	// === Font metrics from OS/2 table ===
+
+	// CapHeight is the height of capital letters (from OS/2).
+	CapHeight int16
+
+	// XHeight is the height of lowercase x (from OS/2).
+	XHeight int16
+
+	// WeightClass is the font weight (100-900, from OS/2).
+	WeightClass uint16
+
+	// WidthClass is the font width class (1-9, from OS/2).
+	WidthClass uint16
+
+	// FSType is the embedding licensing rights (from OS/2).
+	FSType uint16
+
+	// TypoAscender is the OS/2 typographic ascender.
+	TypoAscender int16
+
+	// TypoDescender is the OS/2 typographic descender.
+	TypoDescender int16
+
+	// StemV is the vertical stem width (estimated from weight).
+	StemV int16
+
+	// Flags is the PDF font flags bitmap.
+	Flags uint32
 }
 
 // TTFTable represents a single table in the font file.

@@ -276,7 +276,13 @@ type TextOperation struct {
 	Y float64
 
 	// Font is the font to use (one of the Standard 14 fonts).
+	// Ignored if CustomFont is set.
 	Font FontName
+
+	// CustomFont is an embedded TrueType/OpenType font (optional).
+	// When set, this takes precedence over Font field.
+	// Use for Unicode text (Cyrillic, CJK, symbols, etc.).
+	CustomFont *CustomFont
 
 	// Size is the font size in points.
 	Size float64

@@ -716,6 +716,16 @@ func convertTextOps(ops []TextOperation) []writer.TextOp {
 			Color: writer.RGB{R: op.Color.R, G: op.Color.G, B: op.Color.B},
 		}
 
+		// Handle custom embedded font.
+		if op.CustomFont != nil {
+			textOp.CustomFont = &writer.EmbeddedFont{
+				TTF:    op.CustomFont.GetTTF(),
+				Subset: op.CustomFont.GetSubset(),
+				ID:     op.CustomFont.ID(),
+			}
+			textOp.Font = "" // Clear standard font when using custom.
+		}
+
 		// Convert CMYK color if present (takes precedence over RGB)
 		if op.ColorCMYK != nil {
 			textOp.ColorCMYK = &writer.CMYK{
@@ -766,6 +776,22 @@ func convertGraphicsOps(ops []GraphicsOperation) []writer.GraphicsOp {
 					C2:    writer.Point{X: seg.C2.X, Y: seg.C2.Y},
 					End:   writer.Point{X: seg.End.X, Y: seg.End.Y},
 				}
+			}
+		}
+
+		// Convert TextBlock fields
+		if op.Type == GraphicsOpTextBlock && op.TextFont != nil {
+			gop.Text = op.Text
+			gop.TextFont = &writer.EmbeddedFont{
+				TTF:    op.TextFont.GetTTF(),
+				Subset: op.TextFont.GetSubset(),
+				ID:     op.TextFont.ID(),
+			}
+			gop.TextSize = op.TextSize
+			if op.TextColor != nil {
+				gop.TextColorR = op.TextColor.R
+				gop.TextColorG = op.TextColor.G
+				gop.TextColorB = op.TextColor.B
 			}
 		}
 

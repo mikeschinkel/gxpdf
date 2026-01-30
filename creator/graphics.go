@@ -30,6 +30,20 @@ const (
 
 	// GraphicsOpBezier draws a complex curve composed of Bézier segments.
 	GraphicsOpBezier
+
+	// Reserved 9-19 for future graphics ops.
+
+	// GraphicsOpBeginClip begins a rectangular clipping region.
+	// All subsequent drawing is clipped to the rectangle (X, Y, Width, Height).
+	// Must be followed by GraphicsOpEndClip to restore the previous clipping state.
+	GraphicsOpBeginClip GraphicsOpType = 20
+
+	// GraphicsOpEndClip ends a clipping region started by GraphicsOpBeginClip.
+	GraphicsOpEndClip GraphicsOpType = 21
+
+	// GraphicsOpTextBlock renders text inline with graphics operations.
+	// Used for clipped text where ordering matters.
+	GraphicsOpTextBlock GraphicsOpType = 22
 )
 
 // LineOptions configures line drawing.
@@ -199,4 +213,10 @@ type GraphicsOperation struct {
 
 	// WatermarkOp is the watermark operation (only for watermark).
 	WatermarkOp *TextWatermark
+
+	// TextBlock fields (only for GraphicsOpTextBlock).
+	Text      string      // Text content
+	TextFont  *CustomFont // Custom font for text
+	TextSize  float64     // Font size
+	TextColor *Color      // Text color (RGB)
 }

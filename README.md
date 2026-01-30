@@ -17,7 +17,7 @@
 - **Color Spaces** - RGB and CMYK support
 - **Tables** - Complex tables with merged cells, borders, backgrounds
 - **Images** - JPEG and PNG with transparency support
-- **Fonts** - Standard 14 PDF fonts + TTF/OTF embedding
+- **Fonts** - Standard 14 PDF fonts + TTF/OTF embedding with full Unicode support (Cyrillic, CJK, symbols)
 - **Document Structure** - Chapters, auto-generated Table of Contents
 - **Annotations** - Sticky notes, highlights, underlines, stamps
 - **Interactive Forms** - Text fields, checkboxes, radio buttons, dropdowns
@@ -73,6 +73,25 @@ func main() {
         log.Fatal(err)
     }
 }
+```
+
+### Unicode Text with Custom Fonts
+
+```go
+c := creator.New()
+page, _ := c.NewPage()
+
+// Load custom font with Unicode support
+font, _ := c.LoadFont("/path/to/arial.ttf")
+
+// Cyrillic text
+page.AddTextCustomFont("Привет, мир!", 100, 700, font, 18)
+
+// CJK text (requires appropriate font like Malgun Gothic)
+cjkFont, _ := c.LoadFont("/path/to/malgun.ttf")
+page.AddTextCustomFont("你好世界 • 안녕하세요", 100, 670, cjkFont, 16)
+
+c.WriteToFile("unicode.pdf")
 ```
 
 ### Creating Encrypted PDFs
@@ -174,6 +193,7 @@ github.com/coregx/gxpdf
 
 - **[API Reference](https://pkg.go.dev/github.com/coregx/gxpdf)** - Full API documentation
 - **[Examples](examples/)** - Code examples for all features
+- **[Enterprise Brochure (PDF)](assets/gxpdf_enterprise_brochure.pdf)** - Sample PDF created with GxPDF
 - **[Architecture](docs/ARCHITECTURE.md)** - DDD architecture overview
 - **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
 - **[Security](SECURITY.md)** - Security policy

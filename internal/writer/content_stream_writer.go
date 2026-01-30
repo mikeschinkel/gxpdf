@@ -143,6 +143,20 @@ func (csw *ContentStreamWriter) ShowText(text string) {
 	csw.writeOp(fmt.Sprintf("(%s)", escaped), "Tj")
 }
 
+// ShowTextEncoded shows pre-encoded text using hex string (Tj operator).
+//
+// This is used for embedded fonts where the text is already encoded
+// as a hex string (e.g., "<0048006500>").
+//
+// Parameters:
+//   - encodedText: Hex-encoded string including angle brackets
+//
+// Reference: PDF 1.7 Spec, Section 9.4.3 (Text-Showing Operators).
+func (csw *ContentStreamWriter) ShowTextEncoded(encodedText string) {
+	// encodedText is already in the format "<XXXX>" so use directly.
+	csw.writeOp(encodedText, "Tj")
+}
+
 // ShowTextNextLine moves to next line and shows text (' operator).
 //
 // Equivalent to: T* followed by Tj.
@@ -278,6 +292,32 @@ func (csw *ContentStreamWriter) FillAndStrokeEvenOdd() {
 // Reference: PDF 1.7 Spec, Section 8.5.3 (Path-Painting Operators).
 func (csw *ContentStreamWriter) EndPath() {
 	csw.writeOp("", "n")
+}
+
+// Clip sets the clipping path using nonzero winding rule (W operator).
+//
+// Must be called after defining a path (e.g., Rectangle) and before EndPath.
+// Subsequent drawing operations will be clipped to this path.
+//
+// Example:
+//
+//	csw.SaveState()
+//	csw.Rectangle(x, y, w, h)
+//	csw.Clip()
+//	csw.EndPath()
+//	// ... draw content that will be clipped ...
+//	csw.RestoreState()
+//
+// Reference: PDF 1.7 Spec, Section 8.5.4 (Clipping Path Operators).
+func (csw *ContentStreamWriter) Clip() {
+	csw.writeOp("", "W")
+}
+
+// ClipEvenOdd sets the clipping path using even-odd rule (W* operator).
+//
+// Reference: PDF 1.7 Spec, Section 8.5.4 (Clipping Path Operators).
+func (csw *ContentStreamWriter) ClipEvenOdd() {
+	csw.writeOp("", "W*")
 }
 
 // --- GRAPHICS STATE OPERATORS ---

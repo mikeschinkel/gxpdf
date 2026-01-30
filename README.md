@@ -8,6 +8,8 @@
 
 **GxPDF** is a modern, high-performance PDF library for Go, built with clean architecture and Go 1.25+ best practices.
 
+**[View Example PDF](assets/gxpdf_enterprise_brochure.pdf)** - See what GxPDF can create!
+
 ## Key Features
 
 ### PDF Creation (Creator API)

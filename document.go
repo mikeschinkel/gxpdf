@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/coregx/gxpdf/internal/application/forms"
 	"github.com/coregx/gxpdf/internal/extractor"
 	"github.com/coregx/gxpdf/internal/parser"
 	"github.com/coregx/gxpdf/internal/tabledetect"
@@ -308,4 +309,134 @@ type DocumentInfo struct {
 	Creator   string
 	Producer  string
 	Encrypted bool
+}
+
+// FormField represents an interactive form field in the document.
+//
+// FormField provides read-only access to form field properties.
+// Use Document methods to get and set field values.
+type FormField struct {
+	internal *forms.FieldInfo
+}
+
+// Name returns the fully qualified field name.
+func (f *FormField) Name() string {
+	return f.internal.Name
+}
+
+// Type returns the field type.
+//   - "Tx" = Text field
+//   - "Btn" = Button (checkbox, radio)
+//   - "Ch" = Choice (dropdown, list)
+//   - "Sig" = Signature
+func (f *FormField) Type() string {
+	return string(f.internal.Type)
+}
+
+// Value returns the current field value.
+func (f *FormField) Value() interface{} {
+	return f.internal.Value
+}
+
+// DefaultValue returns the field's default value.
+func (f *FormField) DefaultValue() interface{} {
+	return f.internal.DefaultValue
+}
+
+// Flags returns the field flags bitmask.
+func (f *FormField) Flags() int {
+	return f.internal.Flags
+}
+
+// Rect returns the field rectangle [x1, y1, x2, y2].
+func (f *FormField) Rect() [4]float64 {
+	return f.internal.Rect
+}
+
+// Options returns the available options for choice fields.
+func (f *FormField) Options() []string {
+	return f.internal.Options
+}
+
+// IsReadOnly returns true if the field is read-only.
+func (f *FormField) IsReadOnly() bool {
+	return f.internal.Flags&1 != 0
+}
+
+// IsRequired returns true if the field is required.
+func (f *FormField) IsRequired() bool {
+	return f.internal.Flags&2 != 0
+}
+
+// IsTextField returns true if this is a text field.
+func (f *FormField) IsTextField() bool {
+	return f.internal.Type == forms.FieldTypeText
+}
+
+// IsButton returns true if this is a button field (checkbox, radio).
+func (f *FormField) IsButton() bool {
+	return f.internal.Type == forms.FieldTypeButton
+}
+
+// IsChoice returns true if this is a choice field (dropdown, list).
+func (f *FormField) IsChoice() bool {
+	return f.internal.Type == forms.FieldTypeChoice
+}
+
+// GetFormFields returns all interactive form fields in the document.
+//
+// Returns nil if the document has no interactive form.
+//
+// Example:
+//
+//	fields, err := doc.GetFormFields()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, f := range fields {
+//	    fmt.Printf("%s (%s): %v\n", f.Name(), f.Type(), f.Value())
+//	}
+func (d *Document) GetFormFields() ([]*FormField, error) {
+	reader := forms.NewReader(d.reader)
+	internalFields, err := reader.GetFields()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get form fields: %w", err)
+	}
+
+	if internalFields == nil {
+		return nil, nil
+	}
+
+	fields := make([]*FormField, len(internalFields))
+	for i, internal := range internalFields {
+		fields[i] = &FormField{internal: internal}
+	}
+
+	return fields, nil
+}
+
+// GetFieldValue returns the value of a form field by name.
+//
+// Returns an error if the field is not found.
+//
+// Example:
+//
+//	value, err := doc.GetFieldValue("username")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Username: %v\n", value)
+func (d *Document) GetFieldValue(name string) (interface{}, error) {
+	reader := forms.NewReader(d.reader)
+	field, err := reader.GetFieldByName(name)
+	if err != nil {
+		return nil, err
+	}
+	return field.Value, nil
+}
+
+// HasForm returns true if the document contains an interactive form.
+func (d *Document) HasForm() bool {
+	acroForm, err := d.reader.GetAcroForm()
+	return err == nil && acroForm != nil
 }

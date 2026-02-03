@@ -774,6 +774,33 @@ func (r *Reader) GetCatalog() (*Dictionary, error) {
 	return r.catalog, nil
 }
 
+// GetAcroForm returns the interactive form dictionary (AcroForm).
+//
+// Returns nil if the document has no interactive form.
+// The AcroForm dictionary contains form field definitions and settings.
+//
+// Reference: PDF 1.7 specification, Section 12.7 (Interactive Forms).
+func (r *Reader) GetAcroForm() (*Dictionary, error) {
+	if r.catalog == nil {
+		return nil, fmt.Errorf("catalog not loaded (call Open first)")
+	}
+
+	acroFormObj := r.catalog.Get("AcroForm")
+	if acroFormObj == nil {
+		return nil, nil // No interactive form
+	}
+
+	// Resolve if indirect reference
+	acroFormObj = r.resolveReferences(acroFormObj)
+
+	dict, ok := acroFormObj.(*Dictionary)
+	if !ok {
+		return nil, fmt.Errorf("AcroForm is not a dictionary")
+	}
+
+	return dict, nil
+}
+
 // GetPages returns the page tree root.
 //
 // The page tree is a hierarchical structure containing all pages.
@@ -931,6 +958,18 @@ func (r *Reader) resolveArray(obj PdfObject) (*Array, error) {
 	}
 
 	return arr, nil
+}
+
+// ResolveArray resolves an object and ensures it's an array.
+// This is the exported version of resolveArray.
+func (r *Reader) ResolveArray(obj PdfObject) (*Array, error) {
+	return r.resolveArray(obj)
+}
+
+// ResolveReferences recursively resolves indirect references in an object.
+// This is the exported version of resolveReferences.
+func (r *Reader) ResolveReferences(obj PdfObject) PdfObject {
+	return r.resolveReferences(obj)
 }
 
 // Version returns the PDF version string from the file header.

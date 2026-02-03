@@ -2,13 +2,13 @@
 
 Strategic development plan for the GxPDF PDF library.
 
-**Current Version**: v0.2.0 (in development)
+**Current Version**: v0.2.0 "Graphics Revolution"
 
 ## Version History
 
-### v0.2.0 "Graphics Revolution" (In Development)
+### v0.2.0 "Graphics Revolution"
 
-**Target**: February 2026
+**Released**: February 2026
 
 Major graphics and forms capabilities:
 
@@ -52,25 +52,35 @@ Full-featured PDF library with:
 
 ## Planned Features
 
-### v0.3.0 - Digital Signatures
+### v0.3.0 - Digital Signatures & DX Improvements
 
-- **Sign PDFs** - Apply digital signatures
+**Priority**: P2
+
+#### Digital Signatures
+- **Sign PDFs** - Apply digital signatures with PKCS#12 certificates
 - **Verify Signatures** - Validate existing signatures
-- **Certificate Support** - PKCS#12, X.509
+- **Visible/Invisible** - Both signature types
 - **Timestamp Support** - TSA integration
 
-### v0.4.0 - PDF/A Compliance
+#### Developer Experience
+- **Fluent Text API** - Chainable text rendering
+- **Paragraph Support** - Multi-line text with wrapping
+- **Y-Cursor** - Automatic vertical positioning
+- **Simple Table API** - Easy table creation
+
+### v0.4.0 - PDF/A & Advanced Features
 
 - **PDF/A-1b** - Basic archival compliance
 - **PDF/A-2b** - Extended archival compliance
-- **Validation** - Check compliance
-- **Conversion** - Convert existing PDFs to PDF/A
-
-### v0.5.0 - Advanced Features
-
 - **SVG Import** - Convert SVG to PDF graphics
+- **Invoice Template** - Pre-built invoice generation
+- **Chart Integration** - Embed charts in PDFs
+
+### v0.5.0 - Rendering & Optimization
+
+- **PDF Render** - Render PDF pages to images
 - **Barcode Generation** - QR codes, Code128, etc.
-- **Advanced Fonts** - Font subsetting optimization
+- **Font Subsetting Optimization** - Reduce file size
 - **Linearization** - Fast web view support
 
 ### v1.0.0 - Stable Release
@@ -108,7 +118,24 @@ Full-featured PDF library with:
 | Form Flattening | Done | v0.2.0 |
 | WASM API | Done | v0.2.0 |
 | Digital Signatures | Planned | v0.3.0 |
+| Fluent Text API | Planned | v0.3.0 |
 | PDF/A Compliance | Planned | v0.4.0 |
+| PDF Render to Image | Planned | v0.5.0 |
+
+## Backlog (10 tasks)
+
+| ID | Feature | Priority | Description |
+|----|---------|----------|-------------|
+| feat-037 | Digital Signatures | **P2** | Sign and verify PDFs |
+| feat-062 | Fluent Text API | P3 | Chainable text methods |
+| feat-063 | Paragraph | P3 | Multi-line text container |
+| feat-064 | Y-Cursor | P3 | Auto vertical positioning |
+| feat-065 | Simple Table API | P3 | Easy table creation |
+| feat-066 | Shape Builders | P3 | Fluent shape construction |
+| feat-036 | SVG Import | P3 | Vector graphics import |
+| feat-039 | Invoice Template | P3 | Pre-built invoice |
+| feat-040 | Chart Integration | P3 | Embed charts |
+| feat-041 | PDF Render | P3 | Render to images |
 
 ## Architecture
 

@@ -1,13 +1,34 @@
 # Contributing to GxPDF
 
-Thank you for considering contributing to GxPDF!
+Thank you for considering contributing to GxPDF! We welcome contributions of all kinds.
 
-The following guidelines help maintain code quality and consistency. Use your best judgment, and feel free to propose changes to this document.
+## Quick Start
+
+```bash
+# 1. Fork on GitHub, then clone
+git clone https://github.com/YOUR_USERNAME/gxpdf.git
+cd gxpdf
+
+# 2. Create branch
+git checkout -b feat/my-feature
+
+# 3. Make changes, then run checks
+go fmt ./...
+go test ./...
+golangci-lint run
+
+# 4. Commit and push
+git add .
+git commit -m "feat: add my feature"
+git push origin feat/my-feature
+
+# 5. Open Pull Request on GitHub
+```
 
 ## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
+- [How to Contribute](#how-to-contribute)
 - [Development Setup](#development-setup)
 - [Making Changes](#making-changes)
 - [Testing](#testing)
@@ -23,24 +44,31 @@ This project follows a professional Code of Conduct. By participating, you agree
 - Provide constructive feedback
 - Focus on the code, not the person
 
-## Getting Started
+## How to Contribute
 
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/gxpdf.git
-   cd gxpdf
-   ```
-3. **Add upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/coregx/gxpdf.git
-   ```
+### Found a Bug?
+
+1. Check if it's already reported in [Issues](https://github.com/coregx/gxpdf/issues)
+2. If not, [open a new issue](https://github.com/coregx/gxpdf/issues/new/choose)
+3. Include: Go version, GxPDF version, OS, and minimal reproduction code
+
+### Have an Idea?
+
+1. Check [Discussions](https://github.com/coregx/gxpdf/discussions) and [Issues](https://github.com/coregx/gxpdf/issues)
+2. For small changes — open an Issue
+3. For large features — start a Discussion first
+
+### Want to Code?
+
+1. Look for issues labeled [`good first issue`](https://github.com/coregx/gxpdf/labels/good%20first%20issue) or [`help wanted`](https://github.com/coregx/gxpdf/labels/help%20wanted)
+2. Comment "I'd like to work on this" to avoid duplicate work
+3. Fork, code, test, submit PR
 
 ## Development Setup
 
 ### Prerequisites
 
-- **Go 1.25 or later** (required)
+- **Go 1.23+** (required)
 - **Git**
 - **golangci-lint** (recommended)
 
@@ -50,51 +78,62 @@ This project follows a professional Code of Conduct. By participating, you agree
 # Install golangci-lint
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
+# Clone and setup
+git clone https://github.com/YOUR_USERNAME/gxpdf.git
+cd gxpdf
+git remote add upstream https://github.com/coregx/gxpdf.git
+
 # Download dependencies
 go mod download
-```
 
-### Verify Setup
-
-```bash
+# Verify setup
 go test ./...
 golangci-lint run
 ```
 
 ## Making Changes
 
-### 1. Create a Branch
+### 1. Sync with Upstream
 
 ```bash
-git checkout -b feature/your-feature-name
+git fetch upstream
+git checkout main
+git merge upstream/main
+```
+
+### 2. Create a Branch
+
+```bash
+git checkout -b feat/your-feature-name
 # or
 git checkout -b fix/your-bug-fix
 ```
 
-**Branch naming conventions**:
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation changes
-- `refactor/` - Code refactoring
-- `test/` - Adding tests
+**Branch naming**:
+- `feat/` — New features
+- `fix/` — Bug fixes
+- `docs/` — Documentation
+- `refactor/` — Code refactoring
+- `test/` — Adding tests
 
-### 2. Make Your Changes
+### 3. Make Your Changes
 
-- Follow the [Coding Standards](#coding-standards)
-- Follow the [Architecture Guidelines](#architecture-guidelines)
+- Follow [Coding Standards](#coding-standards)
+- Follow [Architecture Guidelines](#architecture-guidelines)
 - Write tests for new functionality
 - Update documentation as needed
 
-### 3. Run Checks
-
-Before committing:
+### 4. Run Checks (Required!)
 
 ```bash
-go fmt ./...
-go test ./...
-go test -race ./...
-golangci-lint run
+go fmt ./...           # Format code
+go vet ./...           # Static analysis
+go test ./...          # Run tests
+go test -race ./...    # Race detector
+golangci-lint run      # Linter
 ```
+
+**All checks must pass before submitting PR.**
 
 ## Testing
 
@@ -120,8 +159,9 @@ func TestRectangle_Dimensions(t *testing.T) {
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            assert.Equal(t, tt.wantW, tt.rect.Width())
-            assert.Equal(t, tt.wantH, tt.rect.Height())
+            if got := tt.rect.Width(); got != tt.wantW {
+                t.Errorf("Width() = %v, want %v", got, tt.wantW)
+            }
         })
     }
 }
@@ -130,80 +170,83 @@ func TestRectangle_Dimensions(t *testing.T) {
 ### Running Tests
 
 ```bash
-# All tests
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# With race detector
-go test -race ./...
-
-# Specific package
-go test ./internal/infrastructure/parser/...
+go test ./...                              # All tests
+go test -cover ./...                       # With coverage
+go test -race ./...                        # Race detector
+go test ./internal/infrastructure/parser/  # Specific package
 ```
 
 ## Submitting Changes
 
 ### 1. Commit Your Changes
 
-Follow **Conventional Commits** format:
+Follow **Conventional Commits**:
 
 ```
-<type>(<scope>): <subject>
+<type>: <subject>
 
 <body>
 ```
 
 **Types**:
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `docs:` - Documentation only
-- `style:` - Code style (formatting)
-- `refactor:` - Code refactoring
-- `test:` - Adding tests
-- `chore:` - Maintenance
+| Type | Description |
+|------|-------------|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `docs:` | Documentation |
+| `refactor:` | Code refactoring |
+| `test:` | Adding tests |
+| `chore:` | Maintenance |
 
 **Examples**:
 ```bash
-git commit -m "feat(parser): add support for object streams"
-git commit -m "fix(writer): handle empty pages correctly"
-git commit -m "docs(readme): update installation instructions"
+git commit -m "feat: add PDF/A validation support"
+git commit -m "fix: handle empty pages in merger"
+git commit -m "docs: update API examples"
 ```
 
 ### 2. Push and Create PR
 
 ```bash
-git push origin feature/your-feature-name
+git push origin feat/your-feature-name
 ```
 
-Then create a Pull Request on GitHub with:
+Then [create a Pull Request](https://github.com/coregx/gxpdf/compare) with:
 - Clear description of changes
-- Link to related issues
-- Test results
+- Link to related issue: `Fixes #123`
+- Confirmation that tests pass
+
+### 3. Code Review
+
+- Maintainers will review your PR
+- Address feedback in new commits
+- Once approved, maintainer will merge
 
 ## Coding Standards
 
 ### Go Style
 
-Follow [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
+Follow [Effective Go](https://go.dev/doc/effective_go) and [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
 
 ### Naming Conventions
 
 ```go
-// Types (PascalCase)
+// Types — PascalCase
 type Document struct { ... }
 type PdfReader struct { ... }
 
-// Interfaces (-er suffix when possible)
+// Interfaces — -er suffix when possible
 type Parser interface { ... }
 type Encoder interface { ... }
 
-// Private fields (camelCase)
+// Private — camelCase
 type Document struct {
     id      DocumentID
     version Version
 }
+
+// Constants — PascalCase for exported
+const MaxPageSize = 14400
 ```
 
 ### Error Handling
@@ -223,7 +266,6 @@ if err := parser.Parse(); err != nil {
 ### Comments
 
 ```go
-// GOOD: Document exported functions
 // Parse parses a PDF file from the given reader.
 // It returns a Document or an error if parsing fails.
 func Parse(r io.Reader) (*Document, error) { ... }
@@ -238,16 +280,21 @@ GxPDF follows **Domain-Driven Design (DDD)** principles.
 ```
 internal/
 ├── domain/              # Pure business logic (NO external deps)
-├── infrastructure/      # Technical implementation
-└── application/         # Use cases (orchestrates domain)
+├── application/         # Use cases (orchestrates domain)
+└── infrastructure/      # Technical implementation (parser, writer)
+
+pkg/                     # Public API
+creator/                 # High-level creation API
 ```
 
 ### Dependency Rules
 
-1. **domain/** → NO dependencies
-2. **application/** → depends on **domain/**
-3. **infrastructure/** → depends on **domain/**
-4. **pkg/** → depends on **application/** + **domain/**
+```
+domain/         → NO dependencies (pure Go only)
+application/    → depends on domain/
+infrastructure/ → depends on domain/
+pkg/            → depends on application/ + domain/
+```
 
 ### Rich Domain Model
 
@@ -260,9 +307,7 @@ type Page struct {
     Height float64
 }
 
-func (p *Page) GetWidth() float64 { return p.Width }
-
-// GOOD: Rich model
+// GOOD: Rich model with behavior
 type Page struct {
     dimensions Rectangle
     content    ContentStream
@@ -277,7 +322,7 @@ func (p *Page) AddText(text string, pos Position, font *Font) error {
 
 ### Good First Issues
 
-Look for issues labeled `good first issue`:
+Look for [`good first issue`](https://github.com/coregx/gxpdf/labels/good%20first%20issue) label:
 - Documentation improvements
 - Adding tests
 - Small bug fixes
@@ -285,16 +330,16 @@ Look for issues labeled `good first issue`:
 
 ### Areas That Need Help
 
-- Parser improvements
-- New stream encoders
-- Documentation
-- Test coverage
+- Digital signatures (v0.3.0)
+- PDF/A compliance
 - Performance optimization
+- Documentation and examples
+- Test coverage
 
 ## Questions?
 
-- **Issues**: [GitHub Issues](https://github.com/coregx/gxpdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/coregx/gxpdf/discussions)
+- **Questions**: [GitHub Discussions](https://github.com/coregx/gxpdf/discussions)
+- **Bugs/Features**: [GitHub Issues](https://github.com/coregx/gxpdf/issues)
 
 ## License
 

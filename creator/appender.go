@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/coregx/gxpdf/internal/application/forms"
 	"github.com/coregx/gxpdf/internal/document"
 	"github.com/coregx/gxpdf/internal/parser"
 	"github.com/coregx/gxpdf/internal/reader"
@@ -68,6 +69,9 @@ type Appender struct {
 
 	// Track new pages added.
 	newPages []*Page
+
+	// Form field writer for setting field values.
+	formWriter *forms.Writer
 }
 
 // NewAppender opens an existing PDF file for modification.
@@ -524,4 +528,115 @@ func (a *Appender) SetMetadata(title, author, subject string) {
 //	app.SetKeywords("modified", "watermarked", "confidential")
 func (a *Appender) SetKeywords(keywords ...string) {
 	a.doc.SetMetadata("", "", "", keywords...)
+}
+
+// SetFieldValue sets a form field value by name.
+//
+// The value type depends on the field type:
+//   - Text field: string
+//   - Checkbox: bool or string ("Yes", "Off")
+//   - Radio button: string (option name)
+//   - Choice field: string or []string (for multi-select)
+//
+// Returns an error if:
+//   - The field is not found
+//   - The PDF has no interactive form
+//   - The value type is incompatible with the field type
+//
+// Example:
+//
+//	app, err := creator.NewAppender("form.pdf")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer app.Close()
+//
+//	// Fill text field
+//	if err := app.SetFieldValue("name", "John Doe"); err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	// Fill checkbox
+//	if err := app.SetFieldValue("agree", true); err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	app.WriteToFile("filled.pdf")
+func (a *Appender) SetFieldValue(name string, value interface{}) error {
+	if a.formWriter == nil {
+		parserReader := a.pdfReader.GetParserReader()
+		a.formWriter = forms.NewWriter(parserReader)
+	}
+
+	// Validate and set the value
+	if err := a.formWriter.ValidateFieldValue(name, value); err != nil {
+		return err
+	}
+
+	return a.formWriter.SetFieldValue(name, value)
+}
+
+// GetFieldValue returns the current value of a form field.
+//
+// Returns the value from pending updates if the field has been modified,
+// otherwise returns the original value from the PDF.
+//
+// Example:
+//
+//	value, err := app.GetFieldValue("name")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Name: %v\n", value)
+func (a *Appender) GetFieldValue(name string) (interface{}, error) {
+	// Check for pending update first
+	if a.formWriter != nil {
+		updates := a.formWriter.GetUpdates()
+		if value, exists := updates[name]; exists {
+			return value, nil
+		}
+	}
+
+	// Get original value from PDF
+	parserReader := a.pdfReader.GetParserReader()
+	reader := forms.NewReader(parserReader)
+	field, err := reader.GetFieldByName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return field.Value, nil
+}
+
+// GetFormFields returns all form fields from the PDF.
+//
+// This includes field metadata such as name, type, current value, and options.
+//
+// Example:
+//
+//	fields, err := app.GetFormFields()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, f := range fields {
+//	    fmt.Printf("%s (%s): %v\n", f.Name, f.Type, f.Value)
+//	}
+func (a *Appender) GetFormFields() ([]*forms.FieldInfo, error) {
+	parserReader := a.pdfReader.GetParserReader()
+	reader := forms.NewReader(parserReader)
+	return reader.GetFields()
+}
+
+// HasForm returns true if the PDF contains an interactive form.
+//
+// Example:
+//
+//	if app.HasForm() {
+//	    fields, _ := app.GetFormFields()
+//	    fmt.Printf("Found %d form fields\n", len(fields))
+//	}
+func (a *Appender) HasForm() bool {
+	parserReader := a.pdfReader.GetParserReader()
+	acroForm, err := parserReader.GetAcroForm()
+	return err == nil && acroForm != nil
 }

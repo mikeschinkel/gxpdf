@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/coregx/gxpdf/discussions
+    about: Ask questions or start a discussion about GxPDF
+  - name: Documentation
+    url: https://pkg.go.dev/github.com/coregx/gxpdf
+    about: Check the API documentation on pkg.go.dev

@@ -39,12 +39,6 @@ type FieldInfo struct {
 
 	// Options contains choice field options.
 	Options []string
-
-	// ObjectNum is the PDF object number for this field.
-	ObjectNum int
-
-	// PageIndex is the page where this field appears (0-based).
-	PageIndex int
 }
 
 // Reader reads form fields from a PDF document.
@@ -110,7 +104,6 @@ func (r *Reader) GetFieldByName(name string) (*FieldInfo, error) {
 
 // parseField parses a field dictionary and its children.
 func (r *Reader) parseField(obj parser.PdfObject, parentName string) ([]*FieldInfo, error) {
-	// Resolve indirect reference
 	obj = r.pdfReader.ResolveReferences(obj)
 
 	dict, ok := obj.(*parser.Dictionary)
@@ -118,99 +111,178 @@ func (r *Reader) parseField(obj parser.PdfObject, parentName string) ([]*FieldIn
 		return nil, fmt.Errorf("field is not a dictionary")
 	}
 
-	// Get object number if indirect
-	objectNum := 0
-	if ref, ok := obj.(*parser.IndirectReference); ok {
-		objectNum = ref.Number
-	}
+	fieldName := r.extractFieldName(dict, parentName)
 
-	// Build field name
-	fieldName := parentName
-	if nameObj := dict.Get("T"); nameObj != nil {
-		if nameStr, ok := r.pdfReader.ResolveReferences(nameObj).(*parser.String); ok {
-			if fieldName != "" {
-				fieldName += "."
-			}
-			fieldName += nameStr.Value()
-		}
-	}
-
-	// Check for Kids (child fields)
-	if kidsObj := dict.Get("Kids"); kidsObj != nil {
-		kidsArray, err := r.pdfReader.ResolveArray(kidsObj)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve Kids: %w", err)
-		}
-
-		var fields []*FieldInfo
-		for i := 0; i < kidsArray.Len(); i++ {
-			kidObj := kidsArray.Get(i)
-			kidFields, err := r.parseField(kidObj, fieldName)
-			if err != nil {
-				continue
-			}
-			fields = append(fields, kidFields...)
-		}
+	// Handle child fields
+	if fields := r.parseKids(dict, fieldName); fields != nil {
 		return fields, nil
 	}
 
-	// This is a terminal field (no Kids)
-	info := &FieldInfo{
-		Name:      fieldName,
-		ObjectNum: objectNum,
-	}
-
-	// Get field type
-	if ftObj := dict.Get("FT"); ftObj != nil {
-		if ftName, ok := r.pdfReader.ResolveReferences(ftObj).(*parser.Name); ok {
-			info.Type = FieldType(ftName.Value())
-		}
-	}
-
-	// Get field flags
-	if ffObj := dict.Get("Ff"); ffObj != nil {
-		if ffInt, ok := r.pdfReader.ResolveReferences(ffObj).(*parser.Integer); ok {
-			info.Flags = int(ffInt.Value())
-		}
-	}
-
-	// Get value
-	info.Value = r.extractValue(dict, "V")
-
-	// Get default value
-	info.DefaultValue = r.extractValue(dict, "DV")
-
-	// Get rectangle
-	if rectObj := dict.Get("Rect"); rectObj != nil {
-		if rectArray, err := r.pdfReader.ResolveArray(rectObj); err == nil && rectArray.Len() == 4 {
-			for i := 0; i < 4; i++ {
-				if num := r.extractNumber(rectArray.Get(i)); num != nil {
-					info.Rect[i] = *num
-				}
-			}
-		}
-	}
-
-	// Get options for choice fields
-	if info.Type == FieldTypeChoice {
-		if optObj := dict.Get("Opt"); optObj != nil {
-			if optArray, err := r.pdfReader.ResolveArray(optObj); err == nil {
-				for i := 0; i < optArray.Len(); i++ {
-					optItem := r.pdfReader.ResolveReferences(optArray.Get(i))
-					if optStr, ok := optItem.(*parser.String); ok {
-						info.Options = append(info.Options, optStr.Value())
-					} else if optArr, ok := optItem.(*parser.Array); ok && optArr.Len() >= 2 {
-						// [export_value, display_value]
-						if displayStr, ok := r.pdfReader.ResolveReferences(optArr.Get(1)).(*parser.String); ok {
-							info.Options = append(info.Options, displayStr.Value())
-						}
-					}
-				}
-			}
-		}
-	}
-
+	// Terminal field - create FieldInfo
+	info := r.createFieldInfo(dict, fieldName)
 	return []*FieldInfo{info}, nil
+}
+
+// extractFieldName builds the fully qualified field name.
+func (r *Reader) extractFieldName(dict *parser.Dictionary, parentName string) string {
+	fieldName := parentName
+	nameObj := dict.Get("T")
+	if nameObj == nil {
+		return fieldName
+	}
+
+	nameStr, ok := r.pdfReader.ResolveReferences(nameObj).(*parser.String)
+	if !ok {
+		return fieldName
+	}
+
+	if fieldName != "" {
+		fieldName += "."
+	}
+	fieldName += nameStr.Value()
+	return fieldName
+}
+
+// parseKids parses child fields if present.
+// Returns nil if there are no kids (terminal field).
+func (r *Reader) parseKids(dict *parser.Dictionary, fieldName string) []*FieldInfo {
+	kidsObj := dict.Get("Kids")
+	if kidsObj == nil {
+		return nil
+	}
+
+	kidsArray, err := r.pdfReader.ResolveArray(kidsObj)
+	if err != nil {
+		return nil
+	}
+
+	var fields []*FieldInfo
+	for i := 0; i < kidsArray.Len(); i++ {
+		kidObj := kidsArray.Get(i)
+		kidFields, err := r.parseField(kidObj, fieldName)
+		if err != nil {
+			continue
+		}
+		fields = append(fields, kidFields...)
+	}
+	return fields
+}
+
+// createFieldInfo creates a FieldInfo from a field dictionary.
+func (r *Reader) createFieldInfo(dict *parser.Dictionary, fieldName string) *FieldInfo {
+	info := &FieldInfo{
+		Name:         fieldName,
+		Type:         r.extractFieldType(dict),
+		Flags:        r.extractFieldFlags(dict),
+		Value:        r.extractValue(dict, "V"),
+		DefaultValue: r.extractValue(dict, "DV"),
+		Rect:         r.extractRect(dict),
+	}
+
+	if info.Type == FieldTypeChoice {
+		info.Options = r.extractChoiceOptions(dict)
+	}
+
+	return info
+}
+
+// extractFieldType extracts the field type from a dictionary.
+func (r *Reader) extractFieldType(dict *parser.Dictionary) FieldType {
+	ftObj := dict.Get("FT")
+	if ftObj == nil {
+		return ""
+	}
+
+	ftName, ok := r.pdfReader.ResolveReferences(ftObj).(*parser.Name)
+	if !ok {
+		return ""
+	}
+
+	return FieldType(ftName.Value())
+}
+
+// extractFieldFlags extracts the field flags from a dictionary.
+func (r *Reader) extractFieldFlags(dict *parser.Dictionary) int {
+	ffObj := dict.Get("Ff")
+	if ffObj == nil {
+		return 0
+	}
+
+	ffInt, ok := r.pdfReader.ResolveReferences(ffObj).(*parser.Integer)
+	if !ok {
+		return 0
+	}
+
+	return int(ffInt.Value())
+}
+
+// extractRect extracts the field rectangle from a dictionary.
+func (r *Reader) extractRect(dict *parser.Dictionary) [4]float64 {
+	var rect [4]float64
+
+	rectObj := dict.Get("Rect")
+	if rectObj == nil {
+		return rect
+	}
+
+	rectArray, err := r.pdfReader.ResolveArray(rectObj)
+	if err != nil || rectArray.Len() != 4 {
+		return rect
+	}
+
+	for i := 0; i < 4; i++ {
+		if num := r.extractNumber(rectArray.Get(i)); num != nil {
+			rect[i] = *num
+		}
+	}
+
+	return rect
+}
+
+// extractChoiceOptions extracts options for choice fields.
+func (r *Reader) extractChoiceOptions(dict *parser.Dictionary) []string {
+	optObj := dict.Get("Opt")
+	if optObj == nil {
+		return nil
+	}
+
+	optArray, err := r.pdfReader.ResolveArray(optObj)
+	if err != nil {
+		return nil
+	}
+
+	var options []string
+	for i := 0; i < optArray.Len(); i++ {
+		opt := r.extractOptionValue(optArray.Get(i))
+		if opt != "" {
+			options = append(options, opt)
+		}
+	}
+
+	return options
+}
+
+// extractOptionValue extracts a single option value.
+func (r *Reader) extractOptionValue(obj parser.PdfObject) string {
+	obj = r.pdfReader.ResolveReferences(obj)
+
+	// Simple string option
+	if optStr, ok := obj.(*parser.String); ok {
+		return optStr.Value()
+	}
+
+	// Array option: [export_value, display_value]
+	optArr, ok := obj.(*parser.Array)
+	if !ok || optArr.Len() < 2 {
+		return ""
+	}
+
+	displayObj := r.pdfReader.ResolveReferences(optArr.Get(1))
+	if displayStr, ok := displayObj.(*parser.String); ok {
+		return displayStr.Value()
+	}
+
+	return ""
 }
 
 // extractValue extracts a field value from a dictionary.
@@ -234,18 +306,22 @@ func (r *Reader) extractValue(dict *parser.Dictionary, key string) interface{} {
 	case *parser.Boolean:
 		return v.Value()
 	case *parser.Array:
-		// Multiple selection
-		var values []string
-		for i := 0; i < v.Len(); i++ {
-			item := r.pdfReader.ResolveReferences(v.Get(i))
-			if str, ok := item.(*parser.String); ok {
-				values = append(values, str.Value())
-			}
-		}
-		return values
+		return r.extractArrayValues(v)
 	default:
 		return nil
 	}
+}
+
+// extractArrayValues extracts string values from an array.
+func (r *Reader) extractArrayValues(arr *parser.Array) []string {
+	var values []string
+	for i := 0; i < arr.Len(); i++ {
+		item := r.pdfReader.ResolveReferences(arr.Get(i))
+		if str, ok := item.(*parser.String); ok {
+			values = append(values, str.Value())
+		}
+	}
+	return values
 }
 
 // extractNumber extracts a numeric value from a PDF object.

@@ -191,7 +191,7 @@ func (w *Writer) setValueInDict(dict *parser.Dictionary, fieldType FieldType, va
 // GetFieldsToUpdate returns field info for all fields that have updates.
 func (w *Writer) GetFieldsToUpdate() ([]*FieldInfo, error) {
 	reader := NewReader(w.pdfReader)
-	var result []*FieldInfo
+	result := make([]*FieldInfo, 0, len(w.updates))
 
 	for name := range w.updates {
 		field, err := reader.GetFieldByName(name)

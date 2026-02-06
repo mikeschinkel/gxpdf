@@ -469,20 +469,28 @@ func (p *Parser) ParseXRefStreamWithFileAccess(file io.ReadSeeker, xrefOffset in
 	}
 
 	// Find 'stream' keyword in the file by reading from xref offset
-	// Seek to xref start
-	if _, err := file.Seek(xrefOffset, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek to xref offset: %w", err)
-	}
+	// Try 1KB first (sufficient for most PDFs), expand to 4KB if needed
+	// to handle PDFs with large xref dictionaries
+	var streamIdx int
+	var searchBuf []byte
+	var n int
+	for _, bufSize := range []int{1024, 4096} {
+		if _, err := file.Seek(xrefOffset, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("failed to seek to xref offset: %w", err)
+		}
 
-	// Read enough data to find 'stream' keyword (read up to 1KB)
-	searchBuf := make([]byte, 1024)
-	n, err := file.Read(searchBuf)
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("failed to read for stream search: %w", err)
-	}
+		searchBuf = make([]byte, bufSize)
+		var err error
+		n, err = file.Read(searchBuf)
+		if err != nil && err != io.EOF {
+			return nil, fmt.Errorf("failed to read for stream search: %w", err)
+		}
 
-	// Find "stream" in the buffer
-	streamIdx := bytes.Index(searchBuf[:n], []byte("stream"))
+		streamIdx = bytes.Index(searchBuf[:n], []byte("stream"))
+		if streamIdx != -1 {
+			break
+		}
+	}
 	if streamIdx == -1 {
 		return nil, fmt.Errorf("could not find 'stream' keyword in xref object")
 	}

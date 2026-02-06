@@ -228,6 +228,7 @@ github.com/coregx/gxpdf
 ├── export/           # Export formats (CSV, JSON, Excel)
 ├── creator/          # PDF creation API
 │   └── forms/        # Interactive form fields
+├── logging/          # Configurable debug logging
 └── internal/         # Private implementation
     ├── application/  # Use cases (extraction, reading)
     └── infrastructure/ # PDF parsing, encoding, writing
@@ -253,6 +254,22 @@ go test -race ./...
 
 # Run with coverage
 go test -cover ./...
+```
+
+### Debug Logging
+
+Debug output is disabled by default. To enable it, configure a logger via the `logging` package:
+
+```go
+import (
+    "log/slog"
+    "os"
+    "github.com/coregx/gxpdf/logging"
+)
+
+logging.SetLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+})))
 ```
 
 ## Roadmap

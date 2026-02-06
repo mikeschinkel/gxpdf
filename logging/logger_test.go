@@ -1,7 +1,10 @@
 package logging_test
 
 import (
+	"bytes"
 	"log/slog"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/coregx/gxpdf/logging"
@@ -11,13 +14,14 @@ func TestSetLogger(t *testing.T) {
 	oldLogger := logging.Logger()
 	defer func() { logging.SetLogger(oldLogger) }()
 
-	handler := logging.NewBufferedLogHandler(nil)
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 	logging.SetLogger(slog.New(handler))
 
 	log := logging.Logger()
 	log.Debug("test message", slog.String("key", "value"))
 
-	if !handler.Contains("test message") {
+	if !strings.Contains(buf.String(), "test message") {
 		t.Error("expected SetLogger to configure the package logger")
 	}
 }
@@ -57,7 +61,8 @@ func TestLogger_ReturnsSameInstance(t *testing.T) {
 	oldLogger := logging.Logger()
 	defer func() { logging.SetLogger(oldLogger) }()
 
-	handler := logging.NewBufferedLogHandler(nil)
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, nil)
 	logging.SetLogger(slog.New(handler))
 
 	log1 := logging.Logger()
@@ -66,4 +71,33 @@ func TestLogger_ReturnsSameInstance(t *testing.T) {
 	if log1 != log2 {
 		t.Error("expected Logger() to return same instance")
 	}
+}
+
+func TestLogger_ConcurrentAccess(t *testing.T) {
+	oldLogger := logging.Logger()
+	defer func() { logging.SetLogger(oldLogger) }()
+
+	var wg sync.WaitGroup
+	const goroutines = 100
+
+	// Half the goroutines call SetLogger, half call Logger
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if n%2 == 0 {
+				var buf bytes.Buffer
+				handler := slog.NewTextHandler(&buf, nil)
+				logging.SetLogger(slog.New(handler))
+			} else {
+				log := logging.Logger()
+				if log == nil {
+					t.Error("Logger() returned nil during concurrent access")
+				}
+				log.Debug("concurrent test")
+			}
+		}(i)
+	}
+
+	wg.Wait()
 }

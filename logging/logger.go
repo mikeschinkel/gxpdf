@@ -7,12 +7,11 @@ import (
 )
 
 // logger holds the package-level logger instance for debug output.
-// Defaults to nil, which causes Logger() to return a discard logger.
+// Initialized to a discard logger in init() to avoid nil checks.
 var logger atomic.Pointer[slog.Logger]
 
-// newDiscardLogger creates a logger that discards all output.
-func newDiscardLogger() *slog.Logger {
-	return slog.New(slog.DiscardHandler)
+func init() {
+	logger.Store(slog.New(slog.DiscardHandler))
 }
 
 // SetLogger configures the package-level logger for debug output.
@@ -24,16 +23,9 @@ func newDiscardLogger() *slog.Logger {
 // Example enabling debug output to stderr:
 //
 //	logging.SetLogger(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-//
-// Example capturing logs in tests:
-//
-//	handler := logging.NewBufferedLogHandler(nil)
-//	logging.SetLogger(slog.New(handler))
-//	// ... run extraction ...
-//	fmt.Println(handler.String()) // inspect captured logs
 func SetLogger(sl *slog.Logger) {
 	if sl == nil {
-		logger.Store(newDiscardLogger())
+		logger.Store(slog.New(slog.DiscardHandler))
 	} else {
 		logger.Store(sl)
 	}
@@ -45,10 +37,5 @@ func SetLogger(sl *slog.Logger) {
 //
 // Logger is safe for concurrent use.
 func Logger() *slog.Logger {
-	l := logger.Load()
-	if l == nil {
-		l = newDiscardLogger()
-		logger.Store(l)
-	}
-	return l
+	return logger.Load()
 }

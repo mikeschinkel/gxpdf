@@ -695,27 +695,16 @@ func (te *TextExtractor) decodeTextBytes(glyphBytes []byte) string {
 //
 // Returns: map[glyphID]glyphName
 func (te *TextExtractor) parseDifferencesArray(encodingDict *parser.Dictionary) map[uint16]string {
-	// Get a local instance of the logger and add func=parseDifferencesArray to all output
 	logger := logging.Logger().With(slog.String("func", "parseDifferencesArray"))
-
-	// Check if debug logging is enabled. This avoids the overhead of preparing
-	// and passing parameters (e.g. fmt.Sprintf) when logging is disabled.
-	logEnabled := logger.Enabled(nil, slog.LevelDebug)
 
 	differences := make(map[uint16]string)
 
 	diffsObj := encodingDict.Get("Differences")
 	if diffsObj == nil {
-		if logEnabled {
-			logger.Debug("No Differences found in encoding dictionary")
-		}
+		logger.Debug("No Differences found in encoding dictionary")
 		return differences
 	}
-	if logEnabled {
-		logger.Debug("Differences object found",
-			slog.String("type", fmt.Sprintf("%T", diffsObj)),
-		)
-	}
+	logger.Debug("Differences object found", slog.Any("type", diffsObj))
 
 	// Resolve if indirect reference
 	if ref, ok := diffsObj.(*parser.IndirectReference); ok {
@@ -754,18 +743,14 @@ func (te *TextExtractor) parseDifferencesArray(encodingDict *parser.Dictionary) 
 			differences[uint16(currentCode)] = glyphName
 			currentCode++
 			if currentCode <= 11 { // Log first 10 mappings
-				if logEnabled {
-					logger.Debug("Mapped glyph",
-						slog.Int("code", currentCode-1),
-						slog.String("name", glyphName),
-					)
-				}
+				logger.Debug("Mapped glyph",
+					slog.Int("code", currentCode-1),
+					slog.String("name", glyphName),
+				)
 			}
 		}
 	}
 
-	if logEnabled {
-		logger.Debug("Finished", slog.Int("total_mappings", len(differences)))
-	}
+	logger.Debug("Finished", slog.Int("total_mappings", len(differences)))
 	return differences
 }

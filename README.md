@@ -258,65 +258,18 @@ go test -cover ./...
 
 ### Debug Logging
 
-The logging package provides configurable debug output via Go's standard `log/slog` package. By default, all debug output is discarded. To enable debug logging during PDF extraction, configure a logger before calling extraction methods.
-
-**Text output to stderr (emulates prior fmt.Printf behavior):**
+Debug output is disabled by default. To enable it, configure a logger via the `logging` package:
 
 ```go
 import (
     "log/slog"
     "os"
-
     "github.com/coregx/gxpdf/logging"
 )
 
-// Enable DEBUG level text logging to stderr
-handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+logging.SetLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
     Level: slog.LevelDebug,
-})
-logging.SetLogger(slog.New(handler))
-```
-
-**JSON output to stderr:**
-
-```go
-import (
-    "log/slog"
-    "os"
-
-    "github.com/coregx/gxpdf/logging"
-)
-
-// Enable DEBUG level JSON logging to stderr
-handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-    Level: slog.LevelDebug,
-})
-logging.SetLogger(slog.New(handler))
-```
-
-**Capturing logs in tests:**
-
-```go
-import (
-    "log/slog"
-    "testing"
-
-    "github.com/coregx/gxpdf/logging"
-)
-
-func TestExtraction(t *testing.T) {
-    // Pass nil to capture all log levels (including DEBUG)
-    handler := logging.NewBufferedLogHandler(nil)
-    logging.SetLogger(slog.New(handler))
-
-    // ... perform extraction ...
-
-    // Inspect captured logs
-    if handler.Contains("parseDifferencesArray") {
-        t.Log("Differences array was parsed")
-        t.Logf("LOG OUTPUT:\n%s", handler.String())
-    }
-}
+})))
 ```
 
 ## Roadmap

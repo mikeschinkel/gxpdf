@@ -4,9 +4,11 @@ import (
 	"compress/zlib"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/coregx/gxpdf/internal/parser"
+	"github.com/coregx/gxpdf/logging"
 )
 
 // TextExtractor extracts text with positional information from PDF pages.
@@ -657,13 +659,6 @@ func (te *TextExtractor) loadFontDecoder(fontName string) {
 	te.fontDecoders[fontName] = decoder
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // decodeTextBytes decodes glyph bytes to Unicode text using the current font decoder.
 //
 // This method looks up the decoder for the current font and uses it to
@@ -700,14 +695,27 @@ func (te *TextExtractor) decodeTextBytes(glyphBytes []byte) string {
 //
 // Returns: map[glyphID]glyphName
 func (te *TextExtractor) parseDifferencesArray(encodingDict *parser.Dictionary) map[uint16]string {
+	// Get a local instance of the logger and add func=parseDifferencesArray to all output
+	logger := logging.Logger().With(slog.String("func", "parseDifferencesArray"))
+
+	// Check if debug logging is enabled. This avoids the overhead of preparing
+	// and passing parameters (e.g. fmt.Sprintf) when logging is disabled.
+	logEnabled := logger.Enabled(nil, slog.LevelDebug)
+
 	differences := make(map[uint16]string)
 
 	diffsObj := encodingDict.Get("Differences")
 	if diffsObj == nil {
-		fmt.Printf("[DEBUG parseDifferencesArray] No Differences found in encoding dictionary\n")
+		if logEnabled {
+			logger.Debug("No Differences found in encoding dictionary")
+		}
 		return differences
 	}
-	fmt.Printf("[DEBUG parseDifferencesArray] Differences object found, type=%T\n", diffsObj)
+	if logEnabled {
+		logger.Debug("Differences object found",
+			slog.String("type", fmt.Sprintf("%T", diffsObj)),
+		)
+	}
 
 	// Resolve if indirect reference
 	if ref, ok := diffsObj.(*parser.IndirectReference); ok {
@@ -746,11 +754,18 @@ func (te *TextExtractor) parseDifferencesArray(encodingDict *parser.Dictionary) 
 			differences[uint16(currentCode)] = glyphName
 			currentCode++
 			if currentCode <= 11 { // Log first 10 mappings
-				fmt.Printf("[DEBUG parseDifferencesArray] Mapped glyph code=%d name=%s\n", currentCode-1, glyphName)
+				if logEnabled {
+					logger.Debug("Mapped glyph",
+						slog.Int("code", currentCode-1),
+						slog.String("name", glyphName),
+					)
+				}
 			}
 		}
 	}
 
-	fmt.Printf("[DEBUG parseDifferencesArray] Finished, total_mappings=%d\n", len(differences))
+	if logEnabled {
+		logger.Debug("Finished", slog.Int("total_mappings", len(differences)))
+	}
 	return differences
 }
